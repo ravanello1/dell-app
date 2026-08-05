@@ -15,4 +15,5 @@ export * from "@/modules/agenda/appointment.schema";
 export * from "@/modules/agenda/schedule.schema";
 export * from "@/modules/inventory/product.schema";
 export * from "@/modules/inventory/stock-movement.schema";
+export * from "@/modules/anamnese/anamnese.schema";
 export * from "@/modules/shared/future.schema";

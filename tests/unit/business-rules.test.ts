@@ -36,6 +36,7 @@ type Modules = {
   clientDto: typeof import("@/modules/clients/client.dto");
   errors: typeof import("@/core/api/errors");
   auth: typeof import("@/modules/auth/auth.service");
+  anamnese: typeof import("@/modules/anamnese/anamnese.service");
   eq: typeof import("drizzle-orm").eq;
 };
 
@@ -65,6 +66,7 @@ beforeAll(async () => {
     clientDto: await import("@/modules/clients/client.dto"),
     errors: await import("@/core/api/errors"),
     auth: await import("@/modules/auth/auth.service"),
+    anamnese: await import("@/modules/anamnese/anamnese.service"),
     eq: (await import("drizzle-orm")).eq,
   };
 
@@ -360,5 +362,65 @@ describe("sessão: o cookie prova identidade, o banco decide permissão", () => 
   it("recusa a sessão de quem não existe neste banco", async () => {
     // O caso do token assinado com o segredo de outro ambiente.
     expect(await m.auth.resolveSessionUser(crypto.randomUUID())).toBeNull();
+  });
+});
+
+describe("anamnese: rascunho vira documento e congela", () => {
+  /**
+   * As três regras que sustentam a ficha: só quem é do clínico acessa, ficha
+   * assinada não muda mais, e assinar congela a identidade de quem assinou.
+   */
+  const PNG =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const pro: SessionUser = { ...owner, id: "user-pro-anamnese", role: "PRO" };
+  const reception: SessionUser = { ...owner, id: "user-recep-anamnese", role: "RECEPTION" };
+
+  it("recepção não acessa nem cria fichas", async () => {
+    await expect(m.anamnese.listByClient(clientId, reception)).rejects.toThrow();
+    await expect(m.anamnese.createForClient(clientId, reception)).rejects.toThrow();
+  });
+
+  it("não abre dois rascunhos soltos para a mesma cliente", async () => {
+    const first = await m.anamnese.createForClient(clientId, owner);
+    const second = await m.anamnese.createForClient(clientId, owner);
+    expect(second.id).toBe(first.id);
+    expect(first.status).toBe("DRAFT");
+  });
+
+  it("assinar exige as duas assinaturas e congela a identidade", async () => {
+    const draft = await m.anamnese.createForClient(clientId, pro);
+
+    const signed = await m.anamnese.sign(
+      draft.id,
+      {
+        answers: { gestante: { value: true, detail: "20 semanas" } },
+        clientSignature: PNG,
+        professionalSignature: PNG,
+      },
+      pro,
+    );
+
+    expect(signed.status).toBe("SIGNED");
+    expect(signed.signedAt).not.toBeNull();
+    // Identidade da responsável técnica congelada no documento.
+    expect(signed.snapshot?.professional.document).toBe("61.418.546/0001-51");
+    expect(signed.snapshot?.client.name).toBeTruthy();
+  });
+
+  it("ficha assinada é imutável — nem editar, nem reassinar, nem descartar", async () => {
+    const draft = await m.anamnese.createForClient(clientId, owner);
+    const signed = await m.anamnese.sign(
+      draft.id,
+      { clientSignature: PNG, professionalSignature: PNG },
+      owner,
+    );
+
+    await expect(
+      m.anamnese.saveDraft(signed.id, { observations: "mudança" }, owner),
+    ).rejects.toThrow();
+    await expect(
+      m.anamnese.sign(signed.id, { clientSignature: PNG, professionalSignature: PNG }, owner),
+    ).rejects.toThrow();
+    await expect(m.anamnese.discardDraft(signed.id, owner)).rejects.toThrow();
   });
 });

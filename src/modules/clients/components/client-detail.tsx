@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   Archive,
   Cake,
+  ClipboardList,
   Download,
   AtSign,
+  ChevronRight,
   Mail,
   MapPin,
   MessageCircle,
@@ -229,6 +231,28 @@ export function ClientDetail({
             )}
           </CardBody>
         </Card>
+      )}
+
+      {/* ── Anamnese ──────────────────────────────────────────────────── */}
+      {canManageSensitiveData && (
+        <Link
+          href={`/clientes/${client.id}/anamnese`}
+          className="group flex items-center gap-3 rounded-(--radius-card) border border-line bg-surface p-4 transition-colors hover:border-gold-400 hover:bg-gold-50/40"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+            <ClipboardList className="size-5" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-ink-900">Anamnese</p>
+            <p className="text-sm text-ink-500">
+              Ficha de saúde, alergias e consentimento assinado
+            </p>
+          </div>
+          <ChevronRight
+            className="size-5 shrink-0 text-ink-300 transition-colors group-hover:text-gold-600"
+            aria-hidden
+          />
+        </Link>
       )}
 
       {/* ── LGPD ──────────────────────────────────────────────────────── */}

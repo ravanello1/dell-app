@@ -5,6 +5,7 @@ import {
   createProductSchema,
   updateProductSchema,
 } from "@/modules/inventory/inventory.dto";
+import { answersSchema, signAnamneseSchema } from "@/modules/anamnese/anamnese.dto";
 import {
   createAppointmentSchema,
   createServiceSchema,
@@ -174,5 +175,34 @@ describe("estoque", () => {
   it("aceita quantidade fracionada, para produtos em ml", () => {
     const result = createMovementSchema.parse({ productId: "p1", type: "OUT", quantity: "2.5" });
     expect(result.quantity).toBe(2.5);
+  });
+});
+
+describe("anamnese dto", () => {
+  const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+  it("aceita respostas de perguntas conhecidas", () => {
+    const r = answersSchema.safeParse({ gestante: { value: true, detail: "20 semanas" } });
+    expect(r.success).toBe(true);
+  });
+
+  it("recusa resposta de pergunta desconhecida", () => {
+    const r = answersSchema.safeParse({ pergunta_que_nao_existe: { value: true } });
+    expect(r.success).toBe(false);
+  });
+
+  it("assinar exige as duas assinaturas", () => {
+    expect(signAnamneseSchema.safeParse({ clientSignature: PNG }).success).toBe(false);
+    expect(
+      signAnamneseSchema.safeParse({ clientSignature: PNG, professionalSignature: PNG }).success,
+    ).toBe(true);
+  });
+
+  it("recusa assinatura que não é um PNG data URI", () => {
+    const r = signAnamneseSchema.safeParse({
+      clientSignature: "javascript:alert(1)",
+      professionalSignature: PNG,
+    });
+    expect(r.success).toBe(false);
   });
 });

@@ -45,7 +45,7 @@ export function AppNav({ session }: { session: SessionUser }) {
   return (
     <>
       {/* ── Desktop: coluna fixa à esquerda ─────────────────────────────── */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-surface md:flex print:!hidden">
         <div className="border-b border-line px-4 py-4">
           <DellWordmark subtitle={`${studio.name} · ${studio.city}`} />
         </div>
@@ -95,7 +95,7 @@ export function AppNav({ session }: { session: SessionUser }) {
       {/* ── Celular: barra fixa no rodapé, ao alcance do polegar ────────── */}
       <nav
         aria-label="Navegação principal"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-md pb-safe md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-md pb-safe md:hidden print:!hidden"
       >
         <ul className="flex items-stretch">
           {items.map((item) => {
@@ -128,7 +128,7 @@ export function AppNav({ session }: { session: SessionUser }) {
 /** Barra superior — só aparece no celular, onde não há coluna lateral. */
 export function AppTopBar({ session }: { session: SessionUser }) {
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-3 backdrop-blur-md md:hidden">
+    <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-3 backdrop-blur-md md:hidden print:!hidden">
       <div className="flex min-w-0 items-center gap-2.5">
         <DellMark className="size-8 shrink-0" />
         <div className="min-w-0 leading-tight">

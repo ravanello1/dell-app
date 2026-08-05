@@ -163,9 +163,6 @@ async function main() {
     const t0 = Date.now();
     const r = await api(owner, "GET", `/api/v1/clients?q=${encodeURIComponent(p)}`);
     const dt = Date.now() - t0;
-    const leak = /password_hash|\$2[aby]\$|root:|no such table|SQLITE_|syntax error|49/.test(
-      r.json ? "" : r.text, // 49 = 7*7, só marca se veio de resposta não-JSON crua
-    );
     const hardLeak = /password_hash|\$2[aby]\$|root:|no such table|SQLITE_|syntax error/i.test(r.text);
     if (hardLeak) rec("CRIT", "injection", "payload vazou dado ou erro de SQL", p.slice(0, 34));
     else if (dt > 2500) rec("ALTA", "injection", `possível SQLi time-based (${dt}ms)`, p.slice(0, 34));
