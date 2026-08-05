@@ -22,8 +22,8 @@ const PUBLIC_PATHS = ["/login", "/sair", "/manifest.webmanifest", "/sw.js", "/ap
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
-  // Ícones do PWA precisam carregar na tela de login e no instalador.
-  if (pathname.startsWith("/pwa-icon/")) return true;
+  // Ícones do PWA precisam carregar no instalador e na tela de login, sem sessão.
+  if (pathname.startsWith("/icons/")) return true;
   return false;
 }
 

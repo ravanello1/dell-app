@@ -16,15 +16,18 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait-primary",
-    background_color: "#faf7f2",
+    // Fundo branco para a tela de abertura combinar com o mármore da arte.
+    background_color: "#ffffff",
     theme_color: "#c9a227",
     lang: "pt-BR",
     dir: "ltr",
     categories: ["business", "productivity"],
     icons: [
-      { src: "/pwa-icon/192", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/pwa-icon/512", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/pwa-icon/512", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      // Versão com respiro nas bordas, para o aro dourado não ser cortado no
+      // recorte circular/squircle que o Android aplica.
+      { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
       {
