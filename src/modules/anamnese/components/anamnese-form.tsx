@@ -3,9 +3,10 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Save, X } from "lucide-react";
+import { Check, MessageCircle, Save, ShieldCheck, X } from "lucide-react";
 import { ApiError } from "@/core/api/client";
 import { cn } from "@/core/utils/cn";
+import { formatDateTime } from "@/core/utils/date";
 import { Button } from "@/ui/button";
 import { Card, CardBody, CardHeader } from "@/ui/card";
 import { Field, Textarea } from "@/ui/field";
@@ -16,8 +17,8 @@ import {
   procedureLabels,
   RESPONSIBLE_PROFESSIONAL,
 } from "../anamnese.questions";
-import { useSaveAnamnese, useSignAnamnese } from "../anamnese.api";
-import type { AnamneseDto, AnswersInput } from "../anamnese.dto";
+import { useSaveAnamnese, useShareAnamnese, useSignAnamnese } from "../anamnese.api";
+import type { AnamneseDto, AnswersInput, SignAnamneseInput } from "../anamnese.dto";
 import { SignaturePad, type SignaturePadHandle } from "./signature-pad";
 
 /**
@@ -61,6 +62,10 @@ export function AnamneseForm({ anamnese, clientName }: { anamnese: AnamneseDto; 
 
   const saveMutation = useSaveAnamnese(anamnese.id);
   const signMutation = useSignAnamnese(anamnese.id);
+  const shareMutation = useShareAnamnese(anamnese.id);
+
+  // A cliente já preencheu e assinou pelo link? Então falta só a contra-assinatura.
+  const clientSigned = Boolean(anamnese.clientSubmittedAt);
 
   const yesCount = useMemo(() => Object.values(answers).filter((a) => a.value).length, [answers]);
 
@@ -83,26 +88,43 @@ export function AnamneseForm({ anamnese, clientName }: { anamnese: AnamneseDto; 
     }
   }
 
-  async function handleSign() {
-    const clientSignature = clientPad.current?.toDataURL();
-    const professionalSignature = proPad.current?.toDataURL();
-
-    if (!clientSignature) {
-      toast.error("Falta a assinatura da cliente.");
-      return;
+  async function handleShare() {
+    try {
+      const { whatsappUrl } = await shareMutation.mutateAsync();
+      // Abre o WhatsApp com o número e a mensagem já preenchidos.
+      window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+    } catch {
+      toast.error("Não foi possível gerar o link. Tente novamente.");
     }
+  }
+
+  async function handleSign() {
+    const professionalSignature = proPad.current?.toDataURL();
     if (!professionalSignature) {
       toast.error("Falta a assinatura da profissional.");
       return;
     }
 
+    // No fluxo presencial a assinatura da cliente vem da tela; quando ela já
+    // assinou pelo link, o servidor usa a que está guardada.
+    let clientSignature: string | undefined;
+    if (!clientSigned) {
+      clientSignature = clientPad.current?.toDataURL() ?? undefined;
+      if (!clientSignature) {
+        toast.error("Falta a assinatura da cliente.");
+        return;
+      }
+    }
+
+    const payload: SignAnamneseInput = {
+      answers: toAnswersInput(answers),
+      observations: observations.trim() || null,
+      professionalSignature,
+      ...(clientSignature && { clientSignature }),
+    };
+
     try {
-      const signed = await signMutation.mutateAsync({
-        answers: toAnswersInput(answers),
-        observations: observations.trim() || null,
-        clientSignature,
-        professionalSignature,
-      });
+      const signed = await signMutation.mutateAsync(payload);
       toast.success("Anamnese assinada.");
       router.replace(`/clientes/${signed.clientId}/anamnese/${signed.id}`);
       router.refresh();
@@ -116,11 +138,44 @@ export function AnamneseForm({ anamnese, clientName }: { anamnese: AnamneseDto; 
   return (
     <div className="flex flex-col gap-4">
       {/* Cabeçalho: de qual procedimento é esta ficha. */}
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gold-700">Anamnese</p>
-        <h1 className="font-display text-2xl text-ink-900">{procedureLabels[anamnese.procedure]}</h1>
-        <p className="text-sm text-ink-500">{clientName}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-gold-700">Anamnese</p>
+          <h1 className="font-display text-2xl text-ink-900">
+            {procedureLabels[anamnese.procedure]}
+          </h1>
+          <p className="text-sm text-ink-500">{clientName}</p>
+        </div>
+        {!clientSigned && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleShare}
+            loading={shareMutation.isPending}
+          >
+            <MessageCircle className="size-4" aria-hidden />
+            Enviar por WhatsApp
+          </Button>
+        )}
       </div>
+
+      {/* A cliente preencheu pelo link: falta só a profissional conferir e assinar. */}
+      {clientSigned && (
+        <div className="flex items-start gap-2.5 rounded-(--radius-card) border border-success/25 bg-success-soft p-4">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" aria-hidden />
+          <div className="text-sm text-ink-700">
+            <p className="font-medium text-success">A cliente preencheu e assinou pelo link.</p>
+            <p className="mt-0.5">
+              Enviou em{" "}
+              {anamnese.clientSubmittedAt
+                ? formatDateTime(new Date(anamnese.clientSubmittedAt))
+                : "—"}
+              . Confira as respostas abaixo e contra-assine para finalizar.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Questionário ────────────────────────────────────────────────── */}
       {groupsForProcedure(anamnese.procedure).map((group) => (
@@ -182,11 +237,24 @@ export function AnamneseForm({ anamnese, clientName }: { anamnese: AnamneseDto; 
             {CLIENT_DECLARATION}
           </p>
 
-          <SignaturePad
-            ref={clientPad}
-            label={`Assinatura da cliente — ${clientName}`}
-            onChangeEmpty={setClientEmpty}
-          />
+          {clientSigned ? (
+            <div className="flex items-center gap-2 rounded-(--radius-field) border border-success/25 bg-success-soft px-3 py-2.5 text-sm text-success">
+              <ShieldCheck className="size-4 shrink-0" aria-hidden />
+              <span>
+                {clientName} assinou pelo link
+                {anamnese.clientSubmittedAt
+                  ? ` em ${formatDateTime(new Date(anamnese.clientSubmittedAt))}`
+                  : ""}
+                .
+              </span>
+            </div>
+          ) : (
+            <SignaturePad
+              ref={clientPad}
+              label={`Assinatura da cliente — ${clientName}`}
+              onChangeEmpty={setClientEmpty}
+            />
+          )}
 
           <div>
             <SignaturePad
@@ -222,9 +290,9 @@ export function AnamneseForm({ anamnese, clientName }: { anamnese: AnamneseDto; 
 
           <ConfirmDialog
             trigger={
-              <Button type="button" disabled={clientEmpty || proEmpty}>
+              <Button type="button" disabled={proEmpty || (!clientSigned && clientEmpty)}>
                 <Check className="size-4" aria-hidden />
-                Assinar e finalizar
+                {clientSigned ? "Conferir e contra-assinar" : "Assinar e finalizar"}
               </Button>
             }
             title="Assinar a anamnese?"

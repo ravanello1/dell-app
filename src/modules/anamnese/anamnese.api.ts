@@ -55,6 +55,13 @@ export function useSaveAnamnese(id: string) {
   });
 }
 
+/** Gera o link público e devolve o WhatsApp pronto (com número e mensagem). */
+export function useShareAnamnese(id: string) {
+  return useMutation<{ url: string; whatsappUrl: string }, ApiError, void>({
+    mutationFn: () => api.post<{ url: string; whatsappUrl: string }>(`/anamnese/${id}/share`, {}),
+  });
+}
+
 export function useSignAnamnese(id: string) {
   const queryClient = useQueryClient();
   return useMutation<AnamneseDto, ApiError, SignAnamneseInput>({

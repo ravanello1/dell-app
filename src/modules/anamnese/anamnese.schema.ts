@@ -57,12 +57,22 @@ export const anamneseForms = sqliteTable(
     signedSnapshot: text("signed_snapshot", { mode: "json" }),
     signedAt: integer("signed_at", { mode: "timestamp_ms" }),
 
+    // ── Link público (preenchimento remoto pela cliente) ─────────────────────
+    /** SHA-256 do token, nunca o token cru: um dump do banco não dá links
+     *  usáveis. O token de verdade só existe na URL enviada à cliente. */
+    publicTokenHash: text("public_token_hash"),
+    publicTokenExpiresAt: integer("public_token_expires_at", { mode: "timestamp_ms" }),
+    /** Quando a cliente preencheu e assinou pelo link. A partir daí falta só a
+     *  contra-assinatura da profissional no studio. */
+    clientSubmittedAt: integer("client_submitted_at", { mode: "timestamp_ms" }),
+
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     ...timestamps,
   },
   (table) => [
     index("anamnese_client_created_idx").on(table.clientId, table.createdAt),
     index("anamnese_status_idx").on(table.status),
+    index("anamnese_public_token_idx").on(table.publicTokenHash),
   ],
 );
 

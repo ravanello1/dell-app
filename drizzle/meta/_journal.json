@@ -22,6 +22,13 @@
       "when": 1785958859668,
       "tag": "0002_anamnese_procedure",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785962891466,
+      "tag": "0003_anamnese_public_link",
+      "breakpoints": true
     }
   ]
 }

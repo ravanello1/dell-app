@@ -103,8 +103,13 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Nunca guardar em cache o que envolve sessão.
-  if (url.pathname.startsWith("/login") || url.pathname.startsWith("/api/v1/auth")) return;
+  // Nunca guardar em cache o que envolve sessão ou token de uso único.
+  if (
+    url.pathname.startsWith("/login") ||
+    url.pathname.startsWith("/api/v1/auth") ||
+    url.pathname.startsWith("/f/")
+  )
+    return;
 
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(cacheFirst(request, STATIC_CACHE));

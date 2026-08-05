@@ -124,6 +124,8 @@ export function AnamneseList({
                     </span>
                     {item.status === "SIGNED" ? (
                       <Badge tone="success">Assinada</Badge>
+                    ) : item.clientSubmittedAt ? (
+                      <Badge tone="rose">Aguardando você</Badge>
                     ) : (
                       <Badge tone="gold">Rascunho</Badge>
                     )}
@@ -137,7 +139,9 @@ export function AnamneseList({
                   <p className="mt-0.5 text-xs text-ink-500">
                     {item.status === "SIGNED" && item.signedAt
                       ? `Assinada em ${formatDateTime(new Date(item.signedAt))}`
-                      : `Criada em ${formatDate(new Date(item.createdAt))}`}
+                      : item.clientSubmittedAt
+                        ? `Preenchida pela cliente em ${formatDateTime(new Date(item.clientSubmittedAt))}`
+                        : `Criada em ${formatDate(new Date(item.createdAt))}`}
                   </p>
                 </div>
               </Link>

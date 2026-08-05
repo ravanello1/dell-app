@@ -5,12 +5,17 @@ import {
   buildSignatureSnapshot,
   toAnamneseDto,
   toAnamneseListItem,
+  toPublicAnamneseDto,
   type AnamneseDto,
   type AnamneseListItem,
+  type PublicAnamneseDto,
+  type PublicAnamneseState,
   type SaveAnamneseInput,
   type SignAnamneseInput,
+  type SubmitPublicInput,
 } from "./anamnese.dto";
 import * as repository from "./anamnese.repository";
+import { generateAnamneseToken, hashAnamneseToken, PUBLIC_LINK_TTL_MS } from "./anamnese.token";
 import type { AnamneseProcedure, AnamneseRow } from "./anamnese.schema";
 
 /**
@@ -129,6 +134,14 @@ export async function sign(
     throw new BadRequestError("Esta ficha já está assinada.");
   }
 
+  // A assinatura da cliente vem da tela (fluxo presencial) ou já está guardada,
+  // do preenchimento remoto. Uma das duas precisa existir — nunca vira documento
+  // sem a assinatura da cliente.
+  const clientSignature = input.clientSignature ?? row.clientSignature;
+  if (!clientSignature) {
+    throw new BadRequestError("Falta a assinatura da cliente.");
+  }
+
   const client = await requireClient(row.clientId);
   const snapshot = buildSignatureSnapshot(client);
 
@@ -136,15 +149,107 @@ export async function sign(
     status: "SIGNED",
     ...(input.answers !== undefined && { answers: input.answers }),
     ...(input.observations !== undefined && { observations: input.observations }),
-    clientSignature: input.clientSignature,
+    clientSignature,
     professionalSignature: input.professionalSignature,
     professionalId: input.professionalId ?? null,
     signedSnapshot: snapshot,
     signedAt: new Date(),
+    // O link não serve mais depois de assinada.
+    publicTokenHash: null,
+    publicTokenExpiresAt: null,
   });
   if (!updated) throw new BadRequestError("Esta ficha já está assinada.");
 
   return toAnamneseDto(updated, { withSignatures: true });
+}
+
+// ── Link público (preenchimento remoto pela cliente) ─────────────────────────
+
+/**
+ * Gera (ou renova) o link público de uma ficha em rascunho e devolve o token
+ * cru — que só existe aqui e na URL enviada à cliente. No banco fica só o hash.
+ * Recriar o link invalida o anterior, porque troca o hash guardado.
+ */
+export async function createPublicLink(
+  id: string,
+  user: SessionUser,
+): Promise<{ token: string; client: { name: string; phone: string } }> {
+  assertCanAccess(user);
+  const row = await requireForm(id);
+
+  if (row.status === "SIGNED") {
+    throw new BadRequestError("Esta ficha já está assinada — não há o que preencher.");
+  }
+
+  const client = await requireClient(row.clientId);
+  const { token, hash } = generateAnamneseToken();
+
+  const updated = await repository.updateDraft(id, {
+    publicTokenHash: hash,
+    publicTokenExpiresAt: new Date(Date.now() + PUBLIC_LINK_TTL_MS),
+  });
+  if (!updated) throw new BadRequestError("Esta ficha já está assinada.");
+
+  return { token, client: { name: client.name, phone: client.phone } };
+}
+
+/**
+ * Lê a ficha a partir do token do link, para a página pública. Não exige sessão:
+ * o token é a credencial, e dá acesso a esta ficha e só a ela.
+ */
+export async function getPublicByToken(token: string): Promise<PublicAnamneseDto> {
+  const row = await repository.findByTokenHash(hashAnamneseToken(token));
+  if (!row) throw new NotFoundError("Link");
+
+  const client = await requireClient(row.clientId);
+  const firstName = client.name.trim().split(/\s+/)[0] ?? client.name;
+
+  const expired =
+    !row.publicTokenExpiresAt || row.publicTokenExpiresAt.getTime() < Date.now();
+
+  let state: PublicAnamneseState;
+  if (row.status === "SIGNED") state = "SIGNED";
+  else if (row.clientSubmittedAt) state = "SUBMITTED";
+  else if (expired) state = "EXPIRED";
+  else state = "FILLABLE";
+
+  return toPublicAnamneseDto(row, state, firstName);
+}
+
+/**
+ * Recebe o preenchimento e a assinatura da cliente pelo link. Guarda tudo no
+ * rascunho e marca `clientSubmittedAt`; a ficha só vira documento quando a
+ * profissional contra-assina no studio. Recusa link expirado, já enviado ou já
+ * assinado — de propósito, para o link não ser reusado para alterar depois.
+ */
+export async function submitPublicByToken(
+  token: string,
+  input: SubmitPublicInput,
+): Promise<{ clientFirstName: string }> {
+  const row = await repository.findByTokenHash(hashAnamneseToken(token));
+  if (!row) throw new NotFoundError("Link");
+
+  if (row.status === "SIGNED") {
+    throw new BadRequestError("Esta ficha já foi finalizada.");
+  }
+  if (row.clientSubmittedAt) {
+    throw new BadRequestError("Esta ficha já foi enviada. Obrigada!");
+  }
+  if (!row.publicTokenExpiresAt || row.publicTokenExpiresAt.getTime() < Date.now()) {
+    throw new BadRequestError("Este link expirou. Peça um novo ao studio.");
+  }
+
+  const updated = await repository.updateDraft(row.id, {
+    answers: input.answers,
+    observations: input.observations ?? row.observations,
+    clientSignature: input.clientSignature,
+    clientSubmittedAt: new Date(),
+  });
+  if (!updated) throw new BadRequestError("Esta ficha já foi finalizada.");
+
+  const client = await requireClient(row.clientId);
+  const firstName = client.name.trim().split(/\s+/)[0] ?? client.name;
+  return { clientFirstName: firstName };
 }
 
 /** Descarta um rascunho. Ficha assinada não se apaga por aqui — é documento. */

@@ -62,12 +62,15 @@ export const saveAnamneseSchema = z.object({
 export type SaveAnamneseInput = z.infer<typeof saveAnamneseSchema>;
 
 /**
- * Assinatura: exige as duas assinaturas juntas. Assinar é o ato que torna a
- * ficha um documento — não faz sentido pela metade.
+ * Assinatura da profissional (no studio). A assinatura da cliente é opcional
+ * aqui: quando ela já preencheu e assinou pelo link, a profissional só
+ * contra-assina, e o service usa a assinatura da cliente já guardada. O service
+ * garante que uma ficha nunca vire documento sem as duas.
  */
 export const signAnamneseSchema = z.object({
-  clientSignature: signatureSchema,
   professionalSignature: signatureSchema,
+  /** Presente no fluxo presencial; ausente quando a cliente já assinou pelo link. */
+  clientSignature: signatureSchema.optional(),
   /** Opcional: quando outra profissional assina no lugar da responsável padrão. */
   professionalId: z.string().min(1).optional(),
   /** Últimas respostas/observações da tela, salvas junto com a assinatura. */
@@ -75,6 +78,14 @@ export const signAnamneseSchema = z.object({
   observations: z.string().trim().max(2000).nullable().optional(),
 });
 export type SignAnamneseInput = z.infer<typeof signAnamneseSchema>;
+
+/** Envio da cliente pelo link público: respostas + a assinatura dela. */
+export const submitPublicSchema = z.object({
+  answers: answersSchema,
+  observations: z.string().trim().max(2000, "Observações muito longas.").nullable().optional(),
+  clientSignature: signatureSchema,
+});
+export type SubmitPublicInput = z.infer<typeof submitPublicSchema>;
 
 // ── Saída ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +105,8 @@ export interface AnamneseDto {
   signedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Quando a cliente preencheu e assinou pelo link — falta a contra-assinatura. */
+  clientSubmittedAt: string | null;
   /** Snapshot congelado na assinatura — presente só em ficha assinada. */
   snapshot: AnamneseSignatureBlock | null;
   /** Imagens das assinaturas — só quando `withSignatures` é pedido (view/impressão). */
@@ -103,7 +116,7 @@ export interface AnamneseDto {
 
 export type AnamneseListItem = Pick<
   AnamneseDto,
-  "id" | "clientId" | "procedure" | "status" | "signedAt" | "createdAt" | "updatedAt"
+  "id" | "clientId" | "procedure" | "status" | "signedAt" | "clientSubmittedAt" | "createdAt" | "updatedAt"
 > & { answeredYesCount: number };
 
 /** Quantas perguntas foram marcadas como "sim" — resumo rápido para a lista. */
@@ -124,6 +137,7 @@ export function toAnamneseListItem(row: AnamneseRow): AnamneseListItem {
     procedure: row.procedure,
     status: row.status,
     signedAt: row.signedAt?.toISOString() ?? null,
+    clientSubmittedAt: row.clientSubmittedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     answeredYesCount: countYes(answers),
@@ -144,6 +158,7 @@ export function toAnamneseDto(
     signedAt: row.signedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    clientSubmittedAt: row.clientSubmittedAt?.toISOString() ?? null,
     snapshot: (row.signedSnapshot as AnamneseSignatureBlock | null) ?? null,
   };
 
@@ -153,6 +168,39 @@ export function toAnamneseDto(
   }
 
   return dto;
+}
+
+// ── Link público ──────────────────────────────────────────────────────────────
+
+/** Situação do link quando a cliente o abre. */
+export type PublicAnamneseState = "FILLABLE" | "SUBMITTED" | "SIGNED" | "EXPIRED";
+
+/**
+ * O que a página pública devolve. Enxuto de propósito: só o primeiro nome da
+ * cliente (para ela confirmar que é a ficha dela), o procedimento e as
+ * respostas já preenchidas. Nada de telefone, endereço, outras fichas ou
+ * qualquer dado que exponha demais caso o link vaze.
+ */
+export interface PublicAnamneseDto {
+  state: PublicAnamneseState;
+  procedure: AnamneseProcedure;
+  clientFirstName: string;
+  answers: AnswersInput;
+  observations: string | null;
+}
+
+export function toPublicAnamneseDto(
+  row: AnamneseRow,
+  state: PublicAnamneseState,
+  clientFirstName: string,
+): PublicAnamneseDto {
+  return {
+    state,
+    procedure: row.procedure,
+    clientFirstName,
+    answers: parseAnswers(row.answers),
+    observations: row.observations,
+  };
 }
 
 /** Monta o bloco que será congelado ao assinar, a partir dos dados atuais. */

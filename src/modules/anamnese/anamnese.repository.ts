@@ -14,6 +14,16 @@ export async function findById(id: string): Promise<AnamneseRow | undefined> {
   return row;
 }
 
+/** Busca a ficha pelo hash do token do link público. */
+export async function findByTokenHash(hash: string): Promise<AnamneseRow | undefined> {
+  const [row] = await db
+    .select()
+    .from(anamneseForms)
+    .where(eq(anamneseForms.publicTokenHash, hash))
+    .limit(1);
+  return row;
+}
+
 /** Todas as fichas de uma cliente, da mais recente para a mais antiga. */
 export async function listByClient(clientId: string): Promise<AnamneseRow[]> {
   return db

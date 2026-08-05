@@ -436,3 +436,77 @@ describe("anamnese: rascunho vira documento e congela", () => {
     await expect(m.anamnese.discardDraft(signed.id, owner)).rejects.toThrow();
   });
 });
+
+describe("anamnese: link público (preenchimento remoto)", () => {
+  /**
+   * A cliente preenche por um link com token, sem login; a profissional
+   * contra-assina depois. O token dá acesso a UMA ficha e só a ela, expira, e
+   * morre quando a ficha é assinada.
+   */
+  const PNG =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const pro: SessionUser = { ...owner, id: "user-pro-anamnese", role: "PRO" };
+
+  it("gera link, a cliente envia, e a profissional contra-assina", async () => {
+    const draft = await m.anamnese.createForClient(clientId, "HENNA", owner);
+    const { token, client } = await m.anamnese.createPublicLink(draft.id, owner);
+    expect(token.length).toBeGreaterThan(30);
+    expect(client.name).toBeTruthy();
+
+    // A cliente abre o link: vê a ficha dela, preenchível.
+    const publicView = await m.anamnese.getPublicByToken(token);
+    expect(publicView.state).toBe("FILLABLE");
+    expect(publicView.procedure).toBe("HENNA");
+    expect(publicView.clientFirstName).toBe("Camila");
+
+    // Envia respostas + assinatura dela.
+    await m.anamnese.submitPublicByToken(token, {
+      answers: { gestante: { value: false, detail: "" } },
+      observations: "enviado de casa",
+      clientSignature: PNG,
+    });
+
+    // Agora está aguardando a profissional; reenvio é recusado.
+    expect((await m.anamnese.getPublicByToken(token)).state).toBe("SUBMITTED");
+    await expect(
+      m.anamnese.submitPublicByToken(token, {
+        answers: {},
+        clientSignature: PNG,
+      }),
+    ).rejects.toThrow();
+
+    // A profissional contra-assina com SÓ a assinatura dela (usa a da cliente já guardada).
+    const signed = await m.anamnese.sign(draft.id, { professionalSignature: PNG }, pro);
+    expect(signed.status).toBe("SIGNED");
+
+    // O link morre depois de assinada.
+    await expect(m.anamnese.getPublicByToken(token)).rejects.toThrow();
+  });
+
+  it("recusa token desconhecido", async () => {
+    await expect(m.anamnese.getPublicByToken("token-que-nao-existe")).rejects.toThrow();
+  });
+
+  it("recusa link expirado", async () => {
+    const draft = await m.anamnese.createForClient(clientId, "LASH_LIFTING", owner);
+    const { token } = await m.anamnese.createPublicLink(draft.id, owner);
+
+    // Força a expiração no passado.
+    const hash = (await import("@/modules/anamnese/anamnese.token")).hashAnamneseToken(token);
+    await m.db
+      .update(m.schema.anamneseForms)
+      .set({ publicTokenExpiresAt: new Date(Date.now() - 1000) })
+      .where(m.eq(m.schema.anamneseForms.publicTokenHash, hash));
+
+    expect((await m.anamnese.getPublicByToken(token)).state).toBe("EXPIRED");
+    await expect(
+      m.anamnese.submitPublicByToken(token, { answers: {}, clientSignature: PNG }),
+    ).rejects.toThrow();
+  });
+
+  it("recepção não gera link (dado clínico)", async () => {
+    const draft = await m.anamnese.createForClient(clientId, "BROW_LAMINATION", owner);
+    const reception: SessionUser = { ...owner, id: "user-recep-anamnese", role: "RECEPTION" };
+    await expect(m.anamnese.createPublicLink(draft.id, reception)).rejects.toThrow();
+  });
+});

@@ -24,6 +24,8 @@ function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
   // Ícones do PWA precisam carregar no instalador e na tela de login, sem sessão.
   if (pathname.startsWith("/icons/")) return true;
+  // Link público de anamnese: a cliente preenche sem login, o token é a credencial.
+  if (pathname.startsWith("/f/")) return true;
   return false;
 }
 
