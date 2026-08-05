@@ -28,7 +28,12 @@ const serverEnvSchema = z.object({
     .string()
     .optional()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
-  VAPID_SUBJECT: z.string().optional().default("mailto:contato@dellbeautystudio.com.br"),
+  // Contato exigido pelo padrão VAPID. Não é verificado nem recebe mensagens —
+  // é só onde um provedor de push registraria quem envia. Usamos a URL do app
+  // (o padrão aceita mailto: ou https:), assim é um valor real e não depende de
+  // uma caixa de e-mail. Dá para sobrescrever com um e-mail de verdade a qualquer
+  // momento pela variável VAPID_SUBJECT.
+  VAPID_SUBJECT: z.string().optional().default("https://dell-app.vercel.app"),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
