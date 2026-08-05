@@ -37,7 +37,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#c9a227",
+  // Branco (o mesmo --color-surface da barra do topo), para a faixa do notch /
+  // ilha dinâmica no app instalado ficar branca e sem emenda com o cabeçalho,
+  // em vez do dourado. O texto do relógio/bateria fica escuro (status bar
+  // "default"), legível sobre o branco.
+  themeColor: "#ffffff",
   width: "device-width",
   initialScale: 1,
   // Permite ampliar: bloquear zoom é uma barreira de acessibilidade.

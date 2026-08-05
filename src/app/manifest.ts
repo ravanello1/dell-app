@@ -18,7 +18,8 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait-primary",
     // Fundo branco para a tela de abertura combinar com o mármore da arte.
     background_color: "#ffffff",
-    theme_color: "#c9a227",
+    // Branco também no tema: no PWA, é o que tinge a barra de status / notch.
+    theme_color: "#ffffff",
     lang: "pt-BR",
     dir: "ltr",
     categories: ["business", "productivity"],
