@@ -16,6 +16,8 @@ import {
 } from "./anamnese.dto";
 import * as repository from "./anamnese.repository";
 import { generateAnamneseToken, hashAnamneseToken, PUBLIC_LINK_TTL_MS } from "./anamnese.token";
+import { procedureLabels } from "./anamnese.questions";
+import { sendToRoles } from "@/modules/notifications/push.service";
 import type { AnamneseProcedure, AnamneseRow } from "./anamnese.schema";
 
 /**
@@ -249,6 +251,20 @@ export async function submitPublicByToken(
 
   const client = await requireClient(row.clientId);
   const firstName = client.name.trim().split(/\s+/)[0] ?? client.name;
+
+  // Avisa a profissional no celular. Nunca deixa uma falha de push derrubar o
+  // envio da cliente — o que importa é a ficha ter sido salva.
+  try {
+    await sendToRoles(["OWNER", "PRO"], {
+      title: "Anamnese recebida ✍️",
+      body: `${firstName} devolveu a ficha de ${procedureLabels[row.procedure]} assinada. Confira e contra-assine.`,
+      url: `/clientes/${row.clientId}/anamnese/${row.id}`,
+      tag: `anamnese-${row.id}`,
+    });
+  } catch (error) {
+    console.error("[anamnese] falha ao notificar envio:", error);
+  }
+
   return { clientFirstName: firstName };
 }
 

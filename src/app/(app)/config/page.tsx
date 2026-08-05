@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ensureSession } from "@/core/auth/guard";
 import { PageHeader } from "@/ui/card";
 import { SettingsView } from "@/modules/agenda/components/settings-view";
+import { PushToggle } from "@/modules/notifications/components/push-toggle";
 
 export const metadata: Metadata = { title: "Ajustes" };
 
@@ -14,8 +15,11 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Ajustes" description="Procedimentos e profissionais do studio" />
-      <SettingsView />
+      <PageHeader title="Ajustes" description="Procedimentos, profissionais e notificações" />
+      <div className="flex flex-col gap-6">
+        <PushToggle />
+        <SettingsView />
+      </div>
     </>
   );
 }

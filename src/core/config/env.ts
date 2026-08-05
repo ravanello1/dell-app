@@ -21,6 +21,14 @@ const serverEnvSchema = z.object({
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET precisa de no mínimo 32 caracteres. Gere com: openssl rand -base64 48"),
+
+  // Web Push (VAPID) — opcionais. Sem elas, as notificações ficam desligadas e
+  // o resto do app funciona igual. As duas andam juntas: só há push com as duas.
+  VAPID_PRIVATE_KEY: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.length > 0 ? value : undefined)),
+  VAPID_SUBJECT: z.string().optional().default("mailto:contato@dellbeautystudio.com.br"),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

@@ -25,7 +25,7 @@ const contentSecurityPolicy = [
 const nextConfig: NextConfig = {
   // O cliente libSQL carrega bindings nativos quando a URL é um arquivo local.
   // Mantê-lo fora do bundle evita que o Turbopack tente empacotar o binário.
-  serverExternalPackages: ["@libsql/client", "libsql"],
+  serverExternalPackages: ["@libsql/client", "libsql", "web-push"],
 
   async headers() {
     return [

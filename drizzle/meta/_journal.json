@@ -29,6 +29,13 @@
       "when": 1785962891466,
       "tag": "0003_anamnese_public_link",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785964898829,
+      "tag": "0004_push_subscriptions",
+      "breakpoints": true
     }
   ]
 }
