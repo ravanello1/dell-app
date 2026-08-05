@@ -102,17 +102,20 @@ async function main() {
   // Limpa fichas anteriores desta cliente para o teste ficar previsível.
   await db.delete(anamneseForms).where(eq(anamneseForms.clientId, client.id));
 
-  // 1) Uma ficha assinada, com alguns "sim".
-  const draft1 = await service.createForClient(client.id, owner);
+  // 1) Uma ficha de extensão de cílios, assinada, com alguns "sim".
+  const draft1 = await service.createForClient(client.id, "CILIOS", owner);
   const signed = await service.sign(
     draft1.id,
     {
       answers: {
         gestante: { value: false, detail: "" },
-        alergia_cianoacrilato: { value: true, detail: "Vermelhidão leve há 2 anos, com outra profissional." },
-        lentes_contato: { value: true, detail: "" },
-        olhos_sensiveis: { value: true, detail: "" },
-        extensao_anterior: { value: true, detail: "Volume russo, há 3 meses." },
+        cil_alergia_cianoacrilato: {
+          value: true,
+          detail: "Vermelhidão leve há 2 anos, com outra profissional.",
+        },
+        cil_lentes_contato: { value: true, detail: "" },
+        cil_olhos_lacrimejam: { value: true, detail: "" },
+        cil_extensao_anterior: { value: true, detail: "Volume russo, há 3 meses." },
       },
       observations: "Cliente prefere volume mais leve. Retirar com cuidado por causa da sensibilidade.",
       clientSignature: fakeSignaturePng(1),
@@ -121,15 +124,15 @@ async function main() {
     owner,
   );
 
-  // 2) Um rascunho aberto, para ver o formulário.
-  // (createForClient devolve o rascunho aberto se houver; como acabamos de
-  //  assinar o anterior, este cria um novo.)
-  const draft2 = await service.createForClient(client.id, owner);
+  // 2) Rascunhos abertos de henna e lash lifting, para ver os formulários.
+  const draftHenna = await service.createForClient(client.id, "HENNA", owner);
+  const draftLifting = await service.createForClient(client.id, "LASH_LIFTING", owner);
 
   console.log("cliente:  ", client.id, "—", client.name);
-  console.log("assinada: /clientes/" + client.id + "/anamnese/" + signed.id);
-  console.log("rascunho: /clientes/" + client.id + "/anamnese/" + draft2.id);
-  console.log("lista:    /clientes/" + client.id + "/anamnese");
+  console.log("assinada (cílios): /clientes/" + client.id + "/anamnese/" + signed.id);
+  console.log("rascunho (henna):  /clientes/" + client.id + "/anamnese/" + draftHenna.id);
+  console.log("rascunho (lift):   /clientes/" + client.id + "/anamnese/" + draftLifting.id);
+  console.log("lista:             /clientes/" + client.id + "/anamnese");
   process.exit(0);
 }
 

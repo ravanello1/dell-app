@@ -375,20 +375,32 @@ describe("anamnese: rascunho vira documento e congela", () => {
   const pro: SessionUser = { ...owner, id: "user-pro-anamnese", role: "PRO" };
   const reception: SessionUser = { ...owner, id: "user-recep-anamnese", role: "RECEPTION" };
 
+  // A profissional precisa existir de verdade: `createdBy` da ficha aponta para
+  // ela e há chave estrangeira para `users`.
+  beforeAll(async () => {
+    await m.db.insert(m.schema.users).values({
+      id: pro.id,
+      name: pro.name,
+      email: "pro-anamnese@dellbeautystudio.com.br",
+      passwordHash: "x",
+      role: "PRO",
+    });
+  });
+
   it("recepção não acessa nem cria fichas", async () => {
     await expect(m.anamnese.listByClient(clientId, reception)).rejects.toThrow();
-    await expect(m.anamnese.createForClient(clientId, reception)).rejects.toThrow();
+    await expect(m.anamnese.createForClient(clientId, "CILIOS", reception)).rejects.toThrow();
   });
 
   it("não abre dois rascunhos soltos para a mesma cliente", async () => {
-    const first = await m.anamnese.createForClient(clientId, owner);
-    const second = await m.anamnese.createForClient(clientId, owner);
+    const first = await m.anamnese.createForClient(clientId, "CILIOS", owner);
+    const second = await m.anamnese.createForClient(clientId, "CILIOS", owner);
     expect(second.id).toBe(first.id);
     expect(first.status).toBe("DRAFT");
   });
 
   it("assinar exige as duas assinaturas e congela a identidade", async () => {
-    const draft = await m.anamnese.createForClient(clientId, pro);
+    const draft = await m.anamnese.createForClient(clientId, "LASH_LIFTING", pro);
 
     const signed = await m.anamnese.sign(
       draft.id,
@@ -408,7 +420,7 @@ describe("anamnese: rascunho vira documento e congela", () => {
   });
 
   it("ficha assinada é imutável — nem editar, nem reassinar, nem descartar", async () => {
-    const draft = await m.anamnese.createForClient(clientId, owner);
+    const draft = await m.anamnese.createForClient(clientId, "CILIOS", owner);
     const signed = await m.anamnese.sign(
       draft.id,
       { clientSignature: PNG, professionalSignature: PNG },

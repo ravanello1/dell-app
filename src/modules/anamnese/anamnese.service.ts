@@ -11,7 +11,7 @@ import {
   type SignAnamneseInput,
 } from "./anamnese.dto";
 import * as repository from "./anamnese.repository";
-import type { AnamneseRow } from "./anamnese.schema";
+import type { AnamneseProcedure, AnamneseRow } from "./anamnese.schema";
 
 /**
  * Regras da anamnese.
@@ -75,15 +75,16 @@ export async function getById(
  */
 export async function createForClient(
   clientId: string,
+  procedure: AnamneseProcedure,
   user: SessionUser,
 ): Promise<AnamneseDto> {
   assertCanAccess(user);
   await requireClient(clientId);
 
-  const openDraft = await repository.findOpenDraftByClient(clientId);
+  const openDraft = await repository.findOpenDraftByClient(clientId, procedure);
   if (openDraft) return toAnamneseDto(openDraft);
 
-  const row = await repository.insert({ clientId, createdBy: user.id, answers: {} });
+  const row = await repository.insert({ clientId, procedure, createdBy: user.id, answers: {} });
   return toAnamneseDto(row);
 }
 

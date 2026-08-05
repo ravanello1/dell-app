@@ -10,7 +10,12 @@ import { Button } from "@/ui/button";
 import { Card, CardBody, CardHeader } from "@/ui/card";
 import { Field, Textarea } from "@/ui/field";
 import { ConfirmDialog } from "@/ui/confirm-dialog";
-import { anamneseGroups, CLIENT_DECLARATION, RESPONSIBLE_PROFESSIONAL } from "../anamnese.questions";
+import {
+  CLIENT_DECLARATION,
+  groupsForProcedure,
+  procedureLabels,
+  RESPONSIBLE_PROFESSIONAL,
+} from "../anamnese.questions";
 import { useSaveAnamnese, useSignAnamnese } from "../anamnese.api";
 import type { AnamneseDto, AnswersInput } from "../anamnese.dto";
 import { SignaturePad, type SignaturePadHandle } from "./signature-pad";
@@ -27,7 +32,7 @@ type AnswerState = Record<string, { value: boolean; detail: string }>;
 
 function initialAnswers(dto: AnamneseDto): AnswerState {
   const state: AnswerState = {};
-  for (const group of anamneseGroups) {
+  for (const group of groupsForProcedure(dto.procedure)) {
     for (const q of group.questions) {
       const saved = dto.answers[q.id];
       state[q.id] = { value: saved?.value ?? false, detail: saved?.detail ?? "" };
@@ -110,8 +115,15 @@ export function AnamneseForm({ anamnese, clientName }: { anamnese: AnamneseDto; 
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Cabeçalho: de qual procedimento é esta ficha. */}
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-gold-700">Anamnese</p>
+        <h1 className="font-display text-2xl text-ink-900">{procedureLabels[anamnese.procedure]}</h1>
+        <p className="text-sm text-ink-500">{clientName}</p>
+      </div>
+
       {/* ── Questionário ────────────────────────────────────────────────── */}
-      {anamneseGroups.map((group) => (
+      {groupsForProcedure(anamnese.procedure).map((group) => (
         <Card key={group.id}>
           <CardHeader title={group.title} />
           <CardBody className="divide-y divide-line">

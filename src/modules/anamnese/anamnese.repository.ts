@@ -1,6 +1,11 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/core/db";
-import { anamneseForms, type AnamneseRow, type NewAnamneseRow } from "./anamnese.schema";
+import {
+  anamneseForms,
+  type AnamneseProcedure,
+  type AnamneseRow,
+  type NewAnamneseRow,
+} from "./anamnese.schema";
 
 /** Único ponto do módulo com acesso ao banco. Nenhuma regra aqui. */
 
@@ -29,12 +34,25 @@ export async function findCurrentByClient(clientId: string): Promise<AnamneseRow
   return row;
 }
 
-/** Rascunho aberto da cliente, se houver — evita criar dois rascunhos soltos. */
-export async function findOpenDraftByClient(clientId: string): Promise<AnamneseRow | undefined> {
+/**
+ * Rascunho aberto da cliente para um procedimento — evita abrir dois rascunhos
+ * soltos do mesmo tipo. É por procedimento: dá para ter, ao mesmo tempo, um
+ * rascunho de lash lifting e outro de henna para a mesma cliente.
+ */
+export async function findOpenDraftByClient(
+  clientId: string,
+  procedure: AnamneseProcedure,
+): Promise<AnamneseRow | undefined> {
   const [row] = await db
     .select()
     .from(anamneseForms)
-    .where(and(eq(anamneseForms.clientId, clientId), eq(anamneseForms.status, "DRAFT")))
+    .where(
+      and(
+        eq(anamneseForms.clientId, clientId),
+        eq(anamneseForms.procedure, procedure),
+        eq(anamneseForms.status, "DRAFT"),
+      ),
+    )
     .orderBy(desc(anamneseForms.createdAt))
     .limit(1);
   return row;

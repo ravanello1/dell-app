@@ -5,6 +5,7 @@ import { api, type ApiError } from "@/core/api/client";
 import type {
   AnamneseDto,
   AnamneseListItem,
+  CreateAnamneseInput,
   SaveAnamneseInput,
   SignAnamneseInput,
 } from "./anamnese.dto";
@@ -35,8 +36,8 @@ export function useAnamnese(id: string | undefined) {
 
 export function useCreateAnamnese(clientId: string) {
   const queryClient = useQueryClient();
-  return useMutation<AnamneseDto, ApiError, void>({
-    mutationFn: () => api.post<AnamneseDto>(`/clients/${clientId}/anamnese`, {}),
+  return useMutation<AnamneseDto, ApiError, CreateAnamneseInput>({
+    mutationFn: (input) => api.post<AnamneseDto>(`/clients/${clientId}/anamnese`, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: anamneseKeys.byClient(clientId) });
     },

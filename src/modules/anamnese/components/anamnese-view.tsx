@@ -6,7 +6,7 @@ import { formatDateTime } from "@/core/utils/date";
 import { cn } from "@/core/utils/cn";
 import { studio } from "@/core/config/studio";
 import { Button } from "@/ui/button";
-import { anamneseGroups } from "../anamnese.questions";
+import { groupsForProcedure, procedureLabels } from "../anamnese.questions";
 import type { AnamneseDto } from "../anamnese.dto";
 
 /**
@@ -42,7 +42,10 @@ export function AnamneseView({ anamnese }: { anamnese: AnamneseDto }) {
         {/* Cabeçalho do documento — só aparece bem na impressão. */}
         <header className="mb-5 border-b border-line pb-4 text-center">
           <h1 className="font-display text-2xl text-ink-900">Ficha de Anamnese</h1>
-          <p className="mt-0.5 text-sm text-ink-500">
+          <p className="mt-0.5 text-sm font-medium text-gold-700">
+            {procedureLabels[anamnese.procedure]}
+          </p>
+          <p className="text-sm text-ink-500">
             {studio.name} · {studio.city}/{studio.state}
           </p>
         </header>
@@ -63,7 +66,7 @@ export function AnamneseView({ anamnese }: { anamnese: AnamneseDto }) {
 
         {/* Respostas. */}
         <section className="flex flex-col gap-4">
-          {anamneseGroups.map((group) => (
+          {groupsForProcedure(anamnese.procedure).map((group) => (
             <div key={group.id} className="break-inside-avoid">
               <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gold-700">
                 {group.title}

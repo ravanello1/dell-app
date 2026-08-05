@@ -6,7 +6,12 @@ import {
   CLIENT_DECLARATION,
   RESPONSIBLE_PROFESSIONAL,
 } from "./anamnese.questions";
-import type { AnamneseRow, AnamneseStatus } from "./anamnese.schema";
+import {
+  anamneseProcedures,
+  type AnamneseProcedure,
+  type AnamneseRow,
+  type AnamneseStatus,
+} from "./anamnese.schema";
 
 /**
  * Contrato de dados da anamnese.
@@ -43,6 +48,12 @@ const signatureSchema = z
   // ~700 KB de base64 — folga larga para uma assinatura, teto contra abuso.
   .max(700_000, "Assinatura muito pesada.");
 
+/** Abertura de ficha: escolhe o procedimento. */
+export const createAnamneseSchema = z.object({
+  procedure: z.enum(anamneseProcedures),
+});
+export type CreateAnamneseInput = z.infer<typeof createAnamneseSchema>;
+
 /** Rascunho: salva respostas e observações enquanto não está assinada. */
 export const saveAnamneseSchema = z.object({
   answers: answersSchema.optional(),
@@ -76,6 +87,7 @@ export interface AnamneseSignatureBlock {
 export interface AnamneseDto {
   id: string;
   clientId: string;
+  procedure: AnamneseProcedure;
   status: AnamneseStatus;
   answers: AnswersInput;
   observations: string | null;
@@ -91,7 +103,7 @@ export interface AnamneseDto {
 
 export type AnamneseListItem = Pick<
   AnamneseDto,
-  "id" | "clientId" | "status" | "signedAt" | "createdAt" | "updatedAt"
+  "id" | "clientId" | "procedure" | "status" | "signedAt" | "createdAt" | "updatedAt"
 > & { answeredYesCount: number };
 
 /** Quantas perguntas foram marcadas como "sim" — resumo rápido para a lista. */
@@ -109,6 +121,7 @@ export function toAnamneseListItem(row: AnamneseRow): AnamneseListItem {
   return {
     id: row.id,
     clientId: row.clientId,
+    procedure: row.procedure,
     status: row.status,
     signedAt: row.signedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -124,6 +137,7 @@ export function toAnamneseDto(
   const dto: AnamneseDto = {
     id: row.id,
     clientId: row.clientId,
+    procedure: row.procedure,
     status: row.status,
     answers: parseAnswers(row.answers),
     observations: row.observations,

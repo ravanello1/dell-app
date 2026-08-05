@@ -19,6 +19,14 @@ import { professionals } from "@/modules/agenda/professional.schema";
 export const anamneseStatuses = ["DRAFT", "SIGNED"] as const;
 export type AnamneseStatus = (typeof anamneseStatuses)[number];
 
+/**
+ * Cada procedimento tem sua própria ficha, com perguntas específicas além das
+ * padrão. O catálogo de perguntas por tipo vive em `anamnese.questions.ts`.
+ * `CILIOS` (extensão) foi o primeiro e é o default das fichas já existentes.
+ */
+export const anamneseProcedures = ["CILIOS", "LASH_LIFTING", "BROW_LAMINATION", "HENNA"] as const;
+export type AnamneseProcedure = (typeof anamneseProcedures)[number];
+
 export const anamneseForms = sqliteTable(
   "anamnese_forms",
   {
@@ -26,6 +34,8 @@ export const anamneseForms = sqliteTable(
     clientId: text("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
+    /** Qual procedimento esta ficha cobre — define o conjunto de perguntas. */
+    procedure: text("procedure", { enum: anamneseProcedures }).notNull().default("CILIOS"),
     status: text("status", { enum: anamneseStatuses }).notNull().default("DRAFT"),
 
     /** Respostas do questionário: `{ [perguntaId]: { value: boolean, detail?: string } }`.

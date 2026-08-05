@@ -1,0 +1,1 @@
+ALTER TABLE `anamnese_forms` ADD `procedure` text DEFAULT 'CILIOS' NOT NULL;
