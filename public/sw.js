@@ -15,21 +15,30 @@
  *   escrita em /api    → sempre rede, nunca cache
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC_CACHE = `dell-static-${VERSION}`;
 const PAGES_CACHE = `dell-pages-${VERSION}`;
 const API_CACHE = `dell-api-${VERSION}`;
 const OFFLINE_URL = "/offline";
 
+/** Arte da marca — precisa estar disponível offline (a página offline mostra o
+ *  logo) e quase nunca muda, então entra no precache junto da página offline. */
+const BRAND_LOGO = "/brand/dell-logo.png";
+
 const CURRENT_CACHES = [STATIC_CACHE, PAGES_CACHE, API_CACHE];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(PAGES_CACHE)
-      .then((cache) => cache.addAll([OFFLINE_URL]))
-      .catch(() => undefined)
-      .then(() => self.skipWaiting()),
+    Promise.all([
+      caches
+        .open(PAGES_CACHE)
+        .then((cache) => cache.addAll([OFFLINE_URL]))
+        .catch(() => undefined),
+      caches
+        .open(STATIC_CACHE)
+        .then((cache) => cache.add(BRAND_LOGO))
+        .catch(() => undefined),
+    ]).then(() => self.skipWaiting()),
   );
 });
 
@@ -98,6 +107,12 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/login") || url.pathname.startsWith("/api/v1/auth")) return;
 
   if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(cacheFirst(request, STATIC_CACHE));
+    return;
+  }
+
+  // Marca e ícones: imutáveis na prática, servidos do cache para abrir offline.
+  if (url.pathname.startsWith("/brand/") || url.pathname.startsWith("/icons/")) {
     event.respondWith(cacheFirst(request, STATIC_CACHE));
     return;
   }

@@ -1,50 +1,37 @@
+import Image from "next/image";
 import { cn } from "@/core/utils/cn";
 
 /**
- * Marca do Dell App: um leque de cílios sobre o dourado da casa.
- * Desenhada só com traços — sem texto — para funcionar do favicon de 32px ao
- * ícone de 512px do PWA sem depender de fonte carregada.
+ * Marca do Dell Beauty Studio: a concha rosa perolada no aro dourado.
+ *
+ * É a identidade visual do studio, a mesma arte do ícone do app e do favicon
+ * (`public/brand/dell-logo.png`). Trocar a imagem ali atualiza a marca em todo
+ * o app. Servida com `unoptimized` de propósito: assim é um `<img>` direto para
+ * o arquivo, que o service worker consegue guardar para o app abrir offline.
  */
 
-/** Só o desenho, sem fundo. Herda a cor de quem o contém. */
-export function DellLashes({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 512 512" fill="none" className={className} aria-hidden>
-      <g
-        stroke="currentColor"
-        strokeWidth="22"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      >
-        {/* linha de base — a pálpebra */}
-        <path d="M118 300 Q256 372 394 300" />
-        {/* fios, do canto interno ao externo, ganhando comprimento */}
-        <path d="M150 316 Q158 246 176 206" />
-        <path d="M204 340 Q212 250 236 190" />
-        <path d="M262 348 Q268 240 288 176" />
-        <path d="M320 338 Q332 246 356 192" />
-        <path d="M370 312 Q384 250 406 214" />
-      </g>
-    </svg>
-  );
-}
-
-/** Marca completa: disco dourado com o leque em branco. */
+/** Só a arte, recortada num disco. Herda o tamanho de quem a contém. */
 export function DellMark({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center rounded-full bg-gradient-to-br from-gold-400 to-gold-600 text-white shadow-sm",
+        "relative inline-block shrink-0 overflow-hidden rounded-full bg-white shadow-sm ring-1 ring-gold-200/70",
         className,
       )}
     >
-      <DellLashes className="size-[68%]" />
+      <Image
+        src="/brand/dell-logo.png"
+        alt="Dell Beauty Studio"
+        fill
+        sizes="128px"
+        unoptimized
+        className="object-cover"
+      />
     </span>
   );
 }
 
-/** Assinatura para cabeçalhos e tela de entrada. */
+/** Assinatura para cabeçalhos e tela de entrada: marca + nome. */
 export function DellWordmark({
   className,
   subtitle,
@@ -54,7 +41,7 @@ export function DellWordmark({
 }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <DellMark className="size-9 shrink-0" />
+      <DellMark className="size-9" />
       <div className="min-w-0 leading-tight">
         <p className="font-display text-lg font-semibold tracking-tight text-ink-900">
           Dell <span className="text-gold-700">App</span>
