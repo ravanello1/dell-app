@@ -1,0 +1,3 @@
+#!/bin/sh
+# Verifica credenciais antes de deixar o commit passar.
+exec sh "$(git rev-parse --show-toplevel)/scripts/check-secrets.sh"

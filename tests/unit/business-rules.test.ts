@@ -35,6 +35,8 @@ type Modules = {
   clients: typeof import("@/modules/clients/client.service");
   clientDto: typeof import("@/modules/clients/client.dto");
   errors: typeof import("@/core/api/errors");
+  auth: typeof import("@/modules/auth/auth.service");
+  eq: typeof import("drizzle-orm").eq;
 };
 
 let m: Modules;
@@ -62,6 +64,8 @@ beforeAll(async () => {
     clients: await import("@/modules/clients/client.service"),
     clientDto: await import("@/modules/clients/client.dto"),
     errors: await import("@/core/api/errors"),
+    auth: await import("@/modules/auth/auth.service"),
+    eq: (await import("drizzle-orm")).eq,
   };
 
   await m.db.insert(m.schema.users).values({
@@ -300,5 +304,61 @@ describe("clientes: uma pessoa, uma ficha", () => {
   it("só a proprietária apaga dados em definitivo", async () => {
     const reception: SessionUser = { ...owner, role: "RECEPTION" };
     await expect(m.clients.eraseClient(clientId, reception)).rejects.toThrow();
+  });
+});
+
+describe("sessão: o cookie prova identidade, o banco decide permissão", () => {
+  /**
+   * O token de sessão vale 30 dias e carrega o papel congelado no momento do
+   * login. Se a autorização confiasse só nele, desativar alguém ou rebaixar seu
+   * papel não teria efeito nenhum até o token vencer. Estes três testes cobrem
+   * exatamente isso.
+   */
+
+  it("resolve o usuário quando ele existe e está ativo", async () => {
+    const resolved = await m.auth.resolveSessionUser(owner.id);
+    expect(resolved).not.toBeNull();
+    expect(resolved?.email).toBe(owner.email);
+    expect(resolved?.role).toBe("OWNER");
+  });
+
+  it("recusa a sessão de quem foi desativado", async () => {
+    const [desativada] = await m.db
+      .insert(m.schema.users)
+      .values({
+        name: "Ex-funcionária",
+        email: "saiu@dellbeautystudio.com.br",
+        passwordHash: "x",
+        role: "RECEPTION",
+        active: false,
+      })
+      .returning();
+
+    expect(await m.auth.resolveSessionUser(desativada!.id)).toBeNull();
+  });
+
+  it("devolve o papel atual do banco, não o que estava no token", async () => {
+    const [promovida] = await m.db
+      .insert(m.schema.users)
+      .values({
+        name: "Promovida",
+        email: "promovida@dellbeautystudio.com.br",
+        passwordHash: "x",
+        role: "RECEPTION",
+      })
+      .returning();
+
+    // O token dela diria RECEPTION para sempre; o banco passa a dizer OWNER.
+    await m.db
+      .update(m.schema.users)
+      .set({ role: "OWNER" })
+      .where(m.eq(m.schema.users.id, promovida!.id));
+
+    expect((await m.auth.resolveSessionUser(promovida!.id))?.role).toBe("OWNER");
+  });
+
+  it("recusa a sessão de quem não existe neste banco", async () => {
+    // O caso do token assinado com o segredo de outro ambiente.
+    expect(await m.auth.resolveSessionUser(crypto.randomUUID())).toBeNull();
   });
 });

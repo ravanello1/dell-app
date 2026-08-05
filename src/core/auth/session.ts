@@ -78,8 +78,16 @@ export async function destroySession(): Promise<void> {
   cookieStore.delete(COOKIE_NAME);
 }
 
-/** Sessão da requisição atual, ou null se não houver cookie válido. */
-export async function getSession(): Promise<SessionUser | null> {
+/**
+ * Dados que o cookie *afirma* sobre quem está pedindo — assinatura conferida,
+ * mas nada mais. Não decida permissão a partir daqui: o token é congelado no
+ * momento do login e continua afirmando o mesmo papel por 30 dias, mesmo que a
+ * pessoa tenha sido desativada ou rebaixada nesse meio-tempo.
+ *
+ * Para saber quem é o usuário de verdade, use `getCurrentUser` em
+ * `core/auth/guard`, que confirma tudo contra o banco.
+ */
+export async function getSessionClaims(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;

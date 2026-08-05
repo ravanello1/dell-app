@@ -1,6 +1,8 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { ForbiddenError, UnauthorizedError } from "@/core/api/errors";
-import { getSession, type SessionUser } from "./session";
+import { resolveSessionUser } from "@/modules/auth/auth.service";
+import { getSessionClaims, type SessionUser } from "./session";
 import type { UserRole } from "@/modules/auth/user.schema";
 
 /**
@@ -10,10 +12,27 @@ import type { UserRole } from "@/modules/auth/user.schema";
  * converte em 401/403. Versões `ensure*` redirecionam e são para páginas.
  */
 
+/**
+ * Quem está pedindo, confirmado contra o banco.
+ *
+ * São duas etapas de propósito. O `proxy.ts` faz só a conferência barata da
+ * assinatura, para barrar quem nem cookie tem sem consultar o banco a cada
+ * requisição. Aqui, onde a permissão de fato é decidida, o usuário é carregado
+ * do banco: existe? está ativo? qual é o papel dele *agora*?
+ *
+ * O `cache` do React memoriza por requisição — uma página que chame isto no
+ * layout e em três services faz uma consulta só.
+ */
+export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
+  const claims = await getSessionClaims();
+  if (!claims) return null;
+  return resolveSessionUser(claims.id);
+});
+
 export async function requireSession(): Promise<SessionUser> {
-  const session = await getSession();
-  if (!session) throw new UnauthorizedError();
-  return session;
+  const user = await getCurrentUser();
+  if (!user) throw new UnauthorizedError();
+  return user;
 }
 
 export async function requireRole(...roles: readonly UserRole[]): Promise<SessionUser> {
@@ -24,11 +43,22 @@ export async function requireRole(...roles: readonly UserRole[]): Promise<Sessio
   return session;
 }
 
-/** Para Server Components: manda para o login em vez de estourar erro. */
+/**
+ * Para Server Components: manda para o login em vez de estourar erro.
+ *
+ * Quando o cookie é válido mas o usuário sumiu ou foi desativado, o destino é
+ * `/sair`, não `/login`: o `proxy` devolveria quem tem token válido de volta ao
+ * painel, e página e proxy ficariam se empurrando em laço. `/sair` apaga o
+ * cookie primeiro, o que quebra o ciclo na origem.
+ */
 export async function ensureSession(): Promise<SessionUser> {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  return session;
+  const claims = await getSessionClaims();
+  if (!claims) redirect("/login");
+
+  const user = await resolveSessionUser(claims.id);
+  if (!user) redirect("/sair?motivo=sessao-invalida");
+
+  return user;
 }
 
 /** Só a proprietária vê custo de produto, fechamento e gestão de usuários. */

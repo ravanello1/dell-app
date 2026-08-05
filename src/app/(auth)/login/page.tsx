@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getSession } from "@/core/auth/session";
+import { getCurrentUser } from "@/core/auth/guard";
 import { studio } from "@/core/config/studio";
 import { DellMark } from "@/ui/brand";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Entrar" };
 
-export default async function LoginPage() {
-  // Quem já tem sessão não precisa ver esta tela.
-  if (await getSession()) redirect("/");
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ motivo?: string }>;
+}) {
+  // Quem já tem sessão válida — conferida no banco — não precisa ver esta tela.
+  if (await getCurrentUser()) redirect("/");
+
+  const { motivo } = await searchParams;
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-surface-muted px-5 py-10">
@@ -24,6 +30,15 @@ export default async function LoginPage() {
             {studio.city} · {studio.state}
           </p>
         </div>
+
+        {motivo === "sessao-invalida" && (
+          <p
+            role="status"
+            className="mb-4 rounded-(--radius-field) border border-gold-300 bg-gold-50 px-4 py-3 text-sm text-ink-700"
+          >
+            Sua sessão não vale mais neste dispositivo. Entre novamente.
+          </p>
+        )}
 
         <div className="rounded-(--radius-card) border border-line bg-surface p-5 shadow-(--shadow-card) sm:p-6">
           <LoginForm />

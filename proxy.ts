@@ -5,14 +5,20 @@ import { SESSION_COOKIE_NAME, verifySessionToken } from "@/core/auth/session";
  * Interceptador de requisições (no Next 16 este arquivo se chama `proxy.ts` —
  * era o antigo `middleware.ts`).
  *
- * É a primeira barreira: nenhuma página ou rota de API do app responde sem um
- * cookie de sessão válido. As camadas seguintes (layout do grupo `(app)` e o
- * wrapper de rota) repetem a verificação de propósito — se um dia alguém mudar
- * o `matcher` daqui, o sistema não fica aberto.
+ * É a primeira barreira, e de propósito a mais barata: confere só a assinatura
+ * do cookie, sem tocar no banco. Assim quem chega sem credencial nenhuma é
+ * barrado sem custar uma consulta, o que importa quando isto roda em toda
+ * requisição.
+ *
+ * Conferir a assinatura não é o mesmo que saber quem é o usuário: o token
+ * carrega papel e nome congelados no login e vale 30 dias. Quem decide
+ * permissão é `getCurrentUser` em `core/auth/guard`, que carrega o usuário do
+ * banco. As duas camadas se somam — se um dia alguém mudar o `matcher` daqui,
+ * o sistema continua fechado.
  */
 
 /** Caminhos que respondem sem sessão. */
-const PUBLIC_PATHS = ["/login", "/manifest.webmanifest", "/sw.js", "/api/v1/health"];
+const PUBLIC_PATHS = ["/login", "/sair", "/manifest.webmanifest", "/sw.js", "/api/v1/health"];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;

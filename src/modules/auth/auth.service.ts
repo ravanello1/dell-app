@@ -2,7 +2,7 @@ import { z } from "zod";
 import { UnauthorizedError } from "@/core/api/errors";
 import { hashPassword, verifyPassword } from "@/core/auth/password";
 import type { SessionUser } from "@/core/auth/session";
-import { findUserByEmail, insertUser, touchLastLogin } from "./user.repository";
+import { findUserByEmail, findUserById, insertUser, touchLastLogin } from "./user.repository";
 import { userRoles } from "./user.schema";
 
 export const loginSchema = z.object({
@@ -39,6 +39,21 @@ export async function authenticate(input: LoginInput): Promise<SessionUser> {
 
   await touchLastLogin(user.id);
 
+  return { id: user.id, name: user.name, email: user.email, role: user.role };
+}
+
+/**
+ * Confirma que o portador do cookie ainda é alguém de verdade neste banco.
+ *
+ * O token carrega nome e papel congelados no login e vale 30 dias. Sem esta
+ * conferência, desativar uma pessoa ou rebaixar seu papel não teria efeito
+ * nenhum até o token vencer — ela continuaria entrando, e com os poderes
+ * antigos. Por isso o papel devolvido aqui é sempre o do banco, nunca o do
+ * token: o cookie prova identidade, o banco decide permissão.
+ */
+export async function resolveSessionUser(userId: string): Promise<SessionUser | null> {
+  const user = await findUserById(userId);
+  if (!user || !user.active) return null;
   return { id: user.id, name: user.name, email: user.email, role: user.role };
 }
 

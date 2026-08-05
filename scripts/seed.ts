@@ -8,6 +8,7 @@ import { services } from "@/modules/agenda/service.schema";
 import { businessHours } from "@/modules/agenda/schedule.schema";
 import { products } from "@/modules/inventory/product.schema";
 import { stockMovements } from "@/modules/inventory/stock-movement.schema";
+import { promptNewPassword } from "./prompt";
 
 /**
  * Popula um banco vazio com o mínimo para o app ser utilizável: a conta da
@@ -64,19 +65,28 @@ async function main() {
 
   // ── Proprietária ──────────────────────────────────────────────────────────
   const ownerEmail = (process.env.SEED_OWNER_EMAIL ?? "").trim().toLowerCase();
-  const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "";
   const ownerName = process.env.SEED_OWNER_NAME ?? "Dell";
 
-  if (!ownerEmail || !ownerPassword) {
-    throw new Error(
-      "Defina SEED_OWNER_EMAIL e SEED_OWNER_PASSWORD no .env.local antes de rodar o seed.",
-    );
-  }
-  if (ownerPassword.length < 8) {
-    throw new Error("SEED_OWNER_PASSWORD precisa de pelo menos 8 caracteres.");
+  if (!ownerEmail) {
+    throw new Error("Defina SEED_OWNER_EMAIL no arquivo de ambiente antes de rodar o seed.");
   }
 
   let [owner] = await db.select().from(users).where(eq(users.email, ownerEmail)).limit(1);
+
+  // A senha só é necessária quando a usuária ainda não existe. Se ela não veio
+  // pelo ambiente — o caso do banco de produção, onde guardar senha em arquivo
+  // seria um erro — pedimos no terminal, e ela vai direto do teclado ao bcrypt.
+  let ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "";
+
+  if (!owner && !ownerPassword) {
+    console.log(`\n  Defina a senha de acesso de ${ownerEmail}:\n`);
+    ownerPassword = await promptNewPassword();
+    console.log("");
+  }
+
+  if (!owner && ownerPassword.length < 8) {
+    throw new Error("A senha precisa de pelo menos 8 caracteres.");
+  }
 
   if (!owner) {
     [owner] = await db

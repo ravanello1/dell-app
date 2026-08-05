@@ -1,45 +1,84 @@
-# dependências
+# ─────────────────────────────────────────────────────────────────────────────
+#  SEGREDOS E CREDENCIAIS — nada daqui pode entrar no Git.
+#  O que entra no histórico do Git não sai fácil: mesmo apagado depois, o valor
+#  continua recuperável em qualquer clone. Na dúvida, ignore.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Variáveis de ambiente: bloqueia tudo, libera só o exemplo (sem valor real).
+.env
+.env.*
+!.env.example
+
+# Chaves, certificados e tokens
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.cer
+*.crt
+id_rsa*
+id_ed25519*
+*.token
+token.txt
+tokens.txt
+senha*.txt
+senhas*.txt
+password*.txt
+*credentials*.json
+*service-account*.json
+secrets.*
+.secrets/
+
+# Credenciais de ferramentas
+.vercel
+.turso
+.netlify
+.aws/
+.npmrc
+.yarnrc
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DADOS DE CLIENTE — o banco local tem dados pessoais reais sob a LGPD.
+# ─────────────────────────────────────────────────────────────────────────────
+local.db
+local.db-shm
+local.db-wal
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sql.gz
+/backups/
+/exports/
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Build, dependências e temporários
+# ─────────────────────────────────────────────────────────────────────────────
 /node_modules
 /.pnp
 .pnp.*
 
-# build
 /.next/
 /out/
 /build
 *.tsbuildinfo
 next-env.d.ts
 
-# banco local (SQLite de desenvolvimento — nunca versionar dados de cliente)
-local.db
-local.db-shm
-local.db-wal
-*.sqlite
-*.sqlite3
-
-# variáveis de ambiente
-.env
-.env.local
-.env.*.local
-
-# testes
 /coverage
 /playwright-report
 /test-results
 /blob-report
 /playwright/.cache
 
-# sistema / editor
 .DS_Store
-*.pem
-.vercel
 .idea
 .vscode/*
 !.vscode/extensions.json
 
-# logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-.test.db*
