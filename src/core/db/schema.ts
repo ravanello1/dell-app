@@ -17,4 +17,5 @@ export * from "@/modules/inventory/product.schema";
 export * from "@/modules/inventory/stock-movement.schema";
 export * from "@/modules/anamnese/anamnese.schema";
 export * from "@/modules/notifications/push.schema";
+export * from "@/modules/marketing/promotion.schema";
 export * from "@/modules/shared/future.schema";

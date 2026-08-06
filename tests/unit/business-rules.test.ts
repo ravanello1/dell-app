@@ -37,6 +37,7 @@ type Modules = {
   errors: typeof import("@/core/api/errors");
   auth: typeof import("@/modules/auth/auth.service");
   anamnese: typeof import("@/modules/anamnese/anamnese.service");
+  marketing: typeof import("@/modules/marketing/marketing.service");
   eq: typeof import("drizzle-orm").eq;
 };
 
@@ -67,6 +68,7 @@ beforeAll(async () => {
     errors: await import("@/core/api/errors"),
     auth: await import("@/modules/auth/auth.service"),
     anamnese: await import("@/modules/anamnese/anamnese.service"),
+    marketing: await import("@/modules/marketing/marketing.service"),
     eq: (await import("drizzle-orm")).eq,
   };
 
@@ -508,5 +510,49 @@ describe("anamnese: link público (preenchimento remoto)", () => {
     const draft = await m.anamnese.createForClient(clientId, "BROW_LAMINATION", owner);
     const reception: SessionUser = { ...owner, id: "user-recep-anamnese", role: "RECEPTION" };
     await expect(m.anamnese.createPublicLink(draft.id, reception)).rejects.toThrow();
+  });
+});
+
+describe("marketing: grupos e promoções", () => {
+  it("monta os grupos e enxerga a cliente na base", async () => {
+    const data = await m.marketing.getMarketingData();
+    expect(Array.isArray(data.all)).toBe(true);
+    expect(data.all.some((c) => c.name.includes("Camila"))).toBe(true);
+    expect(typeof data.nowMs).toBe("number");
+  });
+
+  it("aniversariante do mês entra no grupo de aniversários", async () => {
+    // Cria uma cliente cujo aniversário cai no mês corrente.
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const created = await m.clients.createClient(
+      m.clientDto.createClientSchema.parse({
+        name: "Aniversariante do Mês",
+        phone: "41999990000",
+        birthDate: `1995-${mm}-15`,
+        lgpdConsent: true,
+      }),
+      owner,
+    );
+
+    const data = await m.marketing.getMarketingData();
+    const found = data.birthdays.find((c) => c.id === created.id);
+    expect(found).toBeTruthy();
+    expect(found?.birthdayDay).toBe(15);
+  });
+
+  it("cria, edita e remove uma promoção", async () => {
+    const promo = await m.marketing.createPromotion(
+      { title: "Julho da amiga", message: "Oi, {nome}! Traga uma amiga.", active: true },
+      owner,
+    );
+    expect(promo.title).toBe("Julho da amiga");
+
+    const edited = await m.marketing.updatePromotion(promo.id, { title: "Agosto da amiga" });
+    expect(edited.title).toBe("Agosto da amiga");
+    expect(edited.message).toContain("{nome}"); // mensagem preservada
+
+    await m.marketing.deletePromotion(promo.id);
+    expect((await m.marketing.listPromotions()).find((p) => p.id === promo.id)).toBeUndefined();
   });
 });

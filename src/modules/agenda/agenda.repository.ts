@@ -248,3 +248,31 @@ export async function hasFutureAppointmentsForService(serviceId: string): Promis
     .limit(1);
   return Boolean(row);
 }
+
+/**
+ * Data da última visita de cada cliente — o atendimento passado mais recente
+ * que de fato aconteceu (nem cancelado, nem falta). Base do grupo "sumidas" do
+ * marketing.
+ */
+export async function lastVisitByClient(): Promise<Map<string, Date>> {
+  const rows = await db
+    .select({
+      clientId: appointments.clientId,
+      lastVisit: sql<number>`max(${appointments.startAt})`,
+    })
+    .from(appointments)
+    .where(
+      and(
+        lt(appointments.startAt, new Date()),
+        ne(appointments.status, "CANCELED"),
+        ne(appointments.status, "NO_SHOW"),
+      ),
+    )
+    .groupBy(appointments.clientId);
+
+  const map = new Map<string, Date>();
+  for (const row of rows) {
+    if (row.lastVisit != null) map.set(row.clientId, new Date(Number(row.lastVisit)));
+  }
+  return map;
+}

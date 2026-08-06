@@ -122,6 +122,23 @@ export async function countActiveClients(): Promise<number> {
   return row?.total ?? 0;
 }
 
+/** Clientes ativas com o mínimo que o marketing precisa: contato e nascimento. */
+export async function listActiveForMarketing(): Promise<
+  { id: string; name: string; phone: string; birthDate: string | null; createdAt: Date }[]
+> {
+  return db
+    .select({
+      id: clients.id,
+      name: clients.name,
+      phone: clients.phone,
+      birthDate: clients.birthDate,
+      createdAt: clients.createdAt,
+    })
+    .from(clients)
+    .where(and(notDeleted, eq(clients.active, true)))
+    .orderBy(clients.name);
+}
+
 /** Aniversariantes de um mês ("01".."12") — usado no painel. */
 export async function listBirthdaysInMonth(month: string): Promise<ClientRow[]> {
   return db

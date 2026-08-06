@@ -174,6 +174,11 @@ export async function listClientHistory(clientId: string): Promise<AppointmentDt
   return rows.map(toAppointmentDto);
 }
 
+/** Última visita de cada cliente (para o marketing decidir quem sumiu). */
+export async function getLastVisitByClient(): Promise<Map<string, Date>> {
+  return repository.lastVisitByClient();
+}
+
 /**
  * Recusa o horário se a profissional já estiver ocupada, dizendo com quem e
  * quando — sem isso a recepção teria de sair procurando o conflito na grade.
