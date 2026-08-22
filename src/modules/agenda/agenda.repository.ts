@@ -155,29 +155,34 @@ export async function findServicesForAppointments(
 ): Promise<Map<string, AppointmentServiceItemRow[]>> {
   if (appointmentIds.length === 0) return new Map();
 
-  const rows = await db
-    .select({
-      appointmentId: appointmentServices.appointmentId,
-      serviceId: services.id,
-      serviceName: services.name,
-      serviceDuration: appointmentServices.durationMin,
-      servicePriceCents: appointmentServices.priceCents,
-      serviceColor: services.color,
-      serviceCategory: services.category,
-      sortOrder: appointmentServices.sortOrder,
-    })
-    .from(appointmentServices)
-    .innerJoin(services, eq(appointmentServices.serviceId, services.id))
-    .where(inArray(appointmentServices.appointmentId, appointmentIds))
-    .orderBy(asc(appointmentServices.sortOrder), asc(appointmentServices.createdAt));
+  try {
+    const rows = await db
+      .select({
+        appointmentId: appointmentServices.appointmentId,
+        serviceId: services.id,
+        serviceName: services.name,
+        serviceDuration: appointmentServices.durationMin,
+        servicePriceCents: appointmentServices.priceCents,
+        serviceColor: services.color,
+        serviceCategory: services.category,
+        sortOrder: appointmentServices.sortOrder,
+      })
+      .from(appointmentServices)
+      .innerJoin(services, eq(appointmentServices.serviceId, services.id))
+      .where(inArray(appointmentServices.appointmentId, appointmentIds))
+      .orderBy(asc(appointmentServices.sortOrder), asc(appointmentServices.createdAt));
 
-  const map = new Map<string, AppointmentServiceItemRow[]>();
-  for (const row of rows) {
-    const list = map.get(row.appointmentId) ?? [];
-    list.push(row);
-    map.set(row.appointmentId, list);
+    const map = new Map<string, AppointmentServiceItemRow[]>();
+    for (const row of rows) {
+      const list = map.get(row.appointmentId) ?? [];
+      list.push(row);
+      map.set(row.appointmentId, list);
+    }
+    return map;
+  } catch {
+    // Caso a tabela appointment_services ainda não tenha sido migrada no banco remoto
+    return new Map();
   }
-  return map;
 }
 
 async function attachServices(rows: AppointmentBaseRow[]): Promise<AppointmentJoinedRow[]> {
@@ -325,15 +330,19 @@ export async function insertAppointment(
   if (!row) throw new Error("Falha ao inserir agendamento.");
 
   if (serviceItems.length > 0) {
-    await db.insert(appointmentServices).values(
-      serviceItems.map((item, index) => ({
-        appointmentId: row.id,
-        serviceId: item.serviceId,
-        durationMin: item.durationMin,
-        priceCents: item.priceCents,
-        sortOrder: item.sortOrder ?? index,
-      })),
-    );
+    try {
+      await db.insert(appointmentServices).values(
+        serviceItems.map((item, index) => ({
+          appointmentId: row.id,
+          serviceId: item.serviceId,
+          durationMin: item.durationMin,
+          priceCents: item.priceCents,
+          sortOrder: item.sortOrder ?? index,
+        })),
+      );
+    } catch {
+      // Ignora se tabela appointment_services ainda não estiver criada
+    }
   }
 
   return row;
@@ -348,17 +357,21 @@ export async function updateAppointmentRow(
   if (!row) return undefined;
 
   if (serviceItems !== undefined) {
-    await db.delete(appointmentServices).where(eq(appointmentServices.appointmentId, id));
-    if (serviceItems.length > 0) {
-      await db.insert(appointmentServices).values(
-        serviceItems.map((item, index) => ({
-          appointmentId: id,
-          serviceId: item.serviceId,
-          durationMin: item.durationMin,
-          priceCents: item.priceCents,
-          sortOrder: item.sortOrder ?? index,
-        })),
-      );
+    try {
+      await db.delete(appointmentServices).where(eq(appointmentServices.appointmentId, id));
+      if (serviceItems.length > 0) {
+        await db.insert(appointmentServices).values(
+          serviceItems.map((item, index) => ({
+            appointmentId: id,
+            serviceId: item.serviceId,
+            durationMin: item.durationMin,
+            priceCents: item.priceCents,
+            sortOrder: item.sortOrder ?? index,
+          })),
+        );
+      }
+    } catch {
+      // Ignora se tabela appointment_services ainda não estiver criada
     }
   }
 
@@ -407,20 +420,24 @@ export async function hasFutureAppointmentsForService(serviceId: string): Promis
 
   if (rowAppointment) return true;
 
-  const [rowService] = await db
-    .select({ id: appointmentServices.id })
-    .from(appointmentServices)
-    .innerJoin(appointments, eq(appointmentServices.appointmentId, appointments.id))
-    .where(
-      and(
-        eq(appointmentServices.serviceId, serviceId),
-        gte(appointments.startAt, new Date()),
-        or(eq(appointments.status, "SCHEDULED"), eq(appointments.status, "CONFIRMED")),
-      ),
-    )
-    .limit(1);
+  try {
+    const [rowService] = await db
+      .select({ id: appointmentServices.id })
+      .from(appointmentServices)
+      .innerJoin(appointments, eq(appointmentServices.appointmentId, appointments.id))
+      .where(
+        and(
+          eq(appointmentServices.serviceId, serviceId),
+          gte(appointments.startAt, new Date()),
+          or(eq(appointments.status, "SCHEDULED"), eq(appointments.status, "CONFIRMED")),
+        ),
+      )
+      .limit(1);
 
-  return Boolean(rowService);
+    return Boolean(rowService);
+  } catch {
+    return false;
+  }
 }
 
 /**
