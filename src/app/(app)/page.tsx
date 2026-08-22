@@ -186,7 +186,10 @@ export default async function TodayPage() {
                           {appointment.client.name}
                         </span>
                         <span className="block truncate text-xs text-ink-600">
-                          {appointment.service.name} · {appointment.professional.name}
+                          {appointment.services && appointment.services.length > 0
+                            ? appointment.services.map((s) => s.name).join(" + ")
+                            : appointment.service.name}{" "}
+                          · {appointment.professional.name}
                         </span>
                       </span>
                       <Badge tone={style.tone} className="shrink-0">

@@ -2,7 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, ExternalLink, MessageCircle, Trash2, TriangleAlert } from "lucide-react";
+import {
+  CalendarClock,
+  ExternalLink,
+  MessageCircle,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/core/api/client";
 import { studio } from "@/core/config/studio";
@@ -73,12 +80,20 @@ export function AppointmentDialog({
 
   // O estado inicial vem dos props uma única vez. Quem monta este diálogo passa
   // uma `key` que muda a cada abertura, então o componente remonta com os
-  // valores certos — a alternativa (um efeito que reseta tudo) causa render em
-  // cascata e é justamente o que a documentação do React desaconselha.
+  // valores certos.
   const initialStart = appointment ? new Date(appointment.startAt) : (suggestedStart ?? new Date());
 
+  const initialServiceIds = useMemo(() => {
+    if (!appointment) return [];
+    if (appointment.services && appointment.services.length > 0) {
+      return appointment.services.map((s) => s.id);
+    }
+    return appointment.service?.id ? [appointment.service.id] : [];
+  }, [appointment]);
+
   const [clientId, setClientId] = useState(appointment?.client.id ?? fixedClientId ?? "");
-  const [serviceId, setServiceId] = useState(appointment?.service.id ?? "");
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(initialServiceIds);
+  const [serviceToAdd, setServiceToAdd] = useState("");
   const [professionalId, setProfessionalId] = useState(
     appointment?.professional.id ?? suggestedProfessionalId ?? "",
   );
@@ -95,22 +110,43 @@ export function AppointmentDialog({
   const professionals = useMemo(() => professionalsQuery.data ?? [], [professionalsQuery.data]);
   const clients = clientsQuery.data?.items ?? [];
 
-  const selectedService = services.find((service) => service.id === serviceId);
+  const selectedServices = useMemo(() => {
+    return selectedServiceIds
+      .map((id) => services.find((s) => s.id === id))
+      .filter((s): s is NonNullable<typeof s> => s !== undefined);
+  }, [selectedServiceIds, services]);
+
+  const totalDurationMin = useMemo(() => {
+    return selectedServices.reduce((sum, s) => sum + s.durationMin, 0);
+  }, [selectedServices]);
+
+  const totalDefaultPriceCents = useMemo(() => {
+    return selectedServices.reduce((sum, s) => sum + s.priceCents, 0);
+  }, [selectedServices]);
 
   // Sem profissional escolhida, assume a primeira — no caso mais comum do
   // studio só existe uma, e não faz sentido obrigar a escolha.
   const effectiveProfessionalId = professionalId || (professionals[0]?.id ?? "");
 
-  // O preço acompanha o procedimento até alguém digitar outro valor. Derivado,
-  // não sincronizado por efeito: enquanto ninguém edita, ele simplesmente
-  // reflete o procedimento escolhido.
-  const price = priceOverride ?? (selectedService ? centsToInput(selectedService.priceCents) : "");
+  // O preço acompanha a soma dos procedimentos até alguém digitar outro valor.
+  const price =
+    priceOverride ?? (selectedServices.length > 0 ? centsToInput(totalDefaultPriceCents) : "");
 
   const previewEnd = useMemo(() => {
-    if (!date || !time || !selectedService) return null;
+    if (!date || !time || totalDurationMin <= 0) return null;
     const start = studioWallTimeToInstant(date, time);
-    return addMinutes(start, selectedService.durationMin);
-  }, [date, time, selectedService]);
+    return addMinutes(start, totalDurationMin);
+  }, [date, time, totalDurationMin]);
+
+  function handleAddService(serviceId: string) {
+    if (!serviceId) return;
+    setSelectedServiceIds((prev) => [...prev, serviceId]);
+    setServiceToAdd("");
+  }
+
+  function handleRemoveService(indexToRemove: number) {
+    setSelectedServiceIds((prev) => prev.filter((_, index) => index !== indexToRemove));
+  }
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
@@ -118,8 +154,13 @@ export function AppointmentDialog({
     event.preventDefault();
     setConflictMessage(null);
 
-    if (!clientId || !serviceId || !effectiveProfessionalId || !date || !time) {
-      toast.error("Preencha cliente, procedimento, profissional, data e horário.");
+    if (selectedServiceIds.length === 0) {
+      toast.error("Selecione pelo menos um procedimento.");
+      return;
+    }
+
+    if (!clientId || !effectiveProfessionalId || !date || !time) {
+      toast.error("Preencha cliente, profissional, data e horário.");
       return;
     }
 
@@ -132,7 +173,7 @@ export function AppointmentDialog({
           id: appointment.id,
           input: {
             clientId,
-            serviceId,
+            serviceIds: selectedServiceIds,
             professionalId: effectiveProfessionalId,
             startAt,
             status,
@@ -144,7 +185,7 @@ export function AppointmentDialog({
       } else {
         await createMutation.mutateAsync({
           clientId,
-          serviceId,
+          serviceIds: selectedServiceIds,
           professionalId: effectiveProfessionalId,
           startAt,
           status,
@@ -192,15 +233,20 @@ export function AppointmentDialog({
     }
   }
 
+  const serviceDescription = useMemo(() => {
+    if (!appointment) return "Escolha a cliente, os procedimentos e o horário";
+    const names =
+      appointment.services && appointment.services.length > 0
+        ? appointment.services.map((s) => s.name).join(" + ")
+        : appointment.service.name;
+    return `${appointment.client.name} · ${names}`;
+  }, [appointment]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         title={isEditing ? "Atendimento" : "Novo atendimento"}
-        description={
-          isEditing && appointment
-            ? `${appointment.client.name} · ${appointment.service.name}`
-            : "Escolha a cliente, o procedimento e o horário"
-        }
+        description={serviceDescription}
         footer={
           <>
             <DialogClose asChild>
@@ -253,16 +299,69 @@ export function AppointmentDialog({
             )}
           </Field>
 
-          <Field label="Procedimento" required>
-            <Select value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
-              <option value="">Selecione o procedimento</option>
-              {services.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.name} · {formatDuration(service.durationMin)} ·{" "}
-                  {formatCents(service.priceCents)}
+          <Field
+            label="Procedimentos"
+            required
+            hint={
+              selectedServices.length > 1
+                ? `${selectedServices.length} procedimentos somando ${formatDuration(totalDurationMin)}`
+                : undefined
+            }
+          >
+            {selectedServices.length > 0 && (
+              <div className="mb-2 flex flex-col gap-1.5">
+                {selectedServices.map((service, index) => (
+                  <div
+                    key={`${service.id}-${index}`}
+                    className="flex items-center justify-between rounded-(--radius-field) border border-line bg-surface-muted px-3 py-2 text-sm transition-colors hover:border-line-strong"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: service.color }}
+                        aria-hidden
+                      />
+                      <span className="truncate font-medium text-ink-900">{service.name}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-ink-600">
+                        {formatDuration(service.durationMin)} · {formatCents(service.priceCents)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveService(index)}
+                      className="ml-2 shrink-0 rounded p-1 text-ink-400 transition-colors hover:bg-danger-soft hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+                      title="Remover procedimento"
+                      aria-label={`Remover ${service.name}`}
+                    >
+                      <X className="size-4" aria-hidden />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Select
+                value={serviceToAdd}
+                onChange={(event) => {
+                  if (event.target.value) {
+                    handleAddService(event.target.value);
+                  }
+                }}
+              >
+                <option value="">
+                  {selectedServices.length === 0
+                    ? "Selecione o primeiro procedimento"
+                    : "+ Adicionar outro procedimento"}
                 </option>
-              ))}
-            </Select>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name} · {formatDuration(service.durationMin)} ·{" "}
+                    {formatCents(service.priceCents)}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </Field>
 
           <Field label="Profissional" required>
@@ -292,16 +391,30 @@ export function AppointmentDialog({
             </Field>
           </div>
 
-          {previewEnd && selectedService && (
-            <p className="flex items-center gap-1.5 rounded-(--radius-field) bg-gold-50 px-3 py-2 text-sm text-gold-800">
-              <CalendarClock className="size-4 shrink-0" aria-hidden />
-              Termina às {toTimeInputValue(previewEnd)} ·{" "}
-              {formatDuration(selectedService.durationMin)}
-            </p>
+          {previewEnd && selectedServices.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-(--radius-field) border border-gold-200/80 bg-gold-50 px-3 py-2.5 text-sm text-gold-900">
+              <p className="flex items-center gap-1.5 font-medium text-gold-900">
+                <CalendarClock className="size-4 shrink-0 text-gold-700" aria-hidden />
+                Termina às {toTimeInputValue(previewEnd)} · Duração total:{" "}
+                {formatDuration(totalDurationMin)}
+              </p>
+              {selectedServices.length > 1 && (
+                <p className="pl-5.5 text-xs text-gold-800/85">
+                  ({selectedServices.map((s) => `${s.name}: ${formatDuration(s.durationMin)}`).join(" · ")})
+                </p>
+              )}
+            </div>
           )}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Valor" hint="Já vem do procedimento; ajuste se combinar outro">
+            <Field
+              label="Valor Total"
+              hint={
+                selectedServices.length > 1
+                  ? "Soma dos procedimentos; ajuste se combinar desconto"
+                  : "Já vem do procedimento; ajuste se combinar outro"
+              }
+            >
               <Input
                 value={price}
                 onChange={(event) => setPriceOverride(event.target.value)}
@@ -372,3 +485,4 @@ export function AppointmentDialog({
     </Dialog>
   );
 }
+

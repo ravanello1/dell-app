@@ -2,13 +2,15 @@ import { and, asc, between, eq, gte, inArray, lt, ne, or, sql } from "drizzle-or
 import { db } from "@/core/db";
 import { clients } from "@/modules/clients/client.schema";
 import {
+  appointmentServices,
   appointments,
   blockingStatuses,
   type AppointmentRow,
+  type AppointmentStatus,
   type NewAppointmentRow,
 } from "./appointment.schema";
 import { professionals, type NewProfessionalRow, type ProfessionalRow } from "./professional.schema";
-import { services, type NewServiceRow, type ServiceRow } from "./service.schema";
+import { services, type NewServiceRow, type ServiceCategory, type ServiceRow } from "./service.schema";
 
 /** Único ponto do módulo de agenda com acesso ao banco. */
 
@@ -78,8 +80,43 @@ export async function updateProfessionalRow(
 
 // ── Agendamentos ──────────────────────────────────────────────────────────────
 
-/** Colunas devolvidas na consulta com junções — a forma que o calendário usa. */
-const appointmentSelection = {
+export interface AppointmentServiceItemRow {
+  appointmentId: string;
+  serviceId: string;
+  serviceName: string;
+  serviceDuration: number;
+  servicePriceCents: number;
+  serviceColor: string;
+  serviceCategory: ServiceCategory;
+  sortOrder: number;
+}
+
+export interface AppointmentJoinedRow {
+  id: string;
+  startAt: Date;
+  endAt: Date;
+  status: AppointmentStatus;
+  priceCents: number;
+  notes: string | null;
+  reminderSentAt: Date | null;
+  cancelReason: string | null;
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  professionalId: string;
+  professionalName: string;
+  professionalColor: string;
+  services: Array<{
+    id: string;
+    name: string;
+    durationMin: number;
+    priceCents: number;
+    color: string;
+    category: ServiceCategory;
+  }>;
+}
+
+const appointmentBaseSelection = {
   id: appointments.id,
   startAt: appointments.startAt,
   endAt: appointments.endAt,
@@ -91,33 +128,107 @@ const appointmentSelection = {
   clientId: clients.id,
   clientName: clients.name,
   clientPhone: clients.phone,
-  serviceId: services.id,
-  serviceName: services.name,
-  serviceDuration: services.durationMin,
-  serviceColor: services.color,
-  serviceCategory: services.category,
   professionalId: professionals.id,
   professionalName: professionals.name,
   professionalColor: professionals.color,
+  fallbackServiceId: appointments.serviceId,
+  fallbackServiceName: services.name,
+  fallbackServiceDuration: services.durationMin,
+  fallbackServicePriceCents: services.priceCents,
+  fallbackServiceColor: services.color,
+  fallbackServiceCategory: services.category,
 } as const;
 
-function joinedQuery() {
+function baseQuery() {
   return db
-    .select(appointmentSelection)
+    .select(appointmentBaseSelection)
     .from(appointments)
     .innerJoin(clients, eq(appointments.clientId, clients.id))
-    .innerJoin(services, eq(appointments.serviceId, services.id))
-    .innerJoin(professionals, eq(appointments.professionalId, professionals.id));
+    .innerJoin(professionals, eq(appointments.professionalId, professionals.id))
+    .leftJoin(services, eq(appointments.serviceId, services.id));
 }
 
-/**
- * Formato de uma linha com as junções aplicadas.
- *
- * Derivado da própria consulta, e não escrito à mão: assim a nulidade de cada
- * coluna vem do schema, e acrescentar um campo à seleção atualiza o tipo
- * sozinho.
- */
-export type AppointmentJoinedRow = Awaited<ReturnType<typeof joinedQuery>>[number];
+type AppointmentBaseRow = Awaited<ReturnType<typeof baseQuery>>[number];
+
+export async function findServicesForAppointments(
+  appointmentIds: string[],
+): Promise<Map<string, AppointmentServiceItemRow[]>> {
+  if (appointmentIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      appointmentId: appointmentServices.appointmentId,
+      serviceId: services.id,
+      serviceName: services.name,
+      serviceDuration: appointmentServices.durationMin,
+      servicePriceCents: appointmentServices.priceCents,
+      serviceColor: services.color,
+      serviceCategory: services.category,
+      sortOrder: appointmentServices.sortOrder,
+    })
+    .from(appointmentServices)
+    .innerJoin(services, eq(appointmentServices.serviceId, services.id))
+    .where(inArray(appointmentServices.appointmentId, appointmentIds))
+    .orderBy(asc(appointmentServices.sortOrder), asc(appointmentServices.createdAt));
+
+  const map = new Map<string, AppointmentServiceItemRow[]>();
+  for (const row of rows) {
+    const list = map.get(row.appointmentId) ?? [];
+    list.push(row);
+    map.set(row.appointmentId, list);
+  }
+  return map;
+}
+
+async function attachServices(rows: AppointmentBaseRow[]): Promise<AppointmentJoinedRow[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+  const servicesMap = await findServicesForAppointments(ids);
+
+  return rows.map((row) => {
+    const attachedServices = servicesMap.get(row.id);
+    const servicesList =
+      attachedServices && attachedServices.length > 0
+        ? attachedServices.map((s) => ({
+            id: s.serviceId,
+            name: s.serviceName,
+            durationMin: s.serviceDuration,
+            priceCents: s.servicePriceCents,
+            color: s.serviceColor,
+            category: s.serviceCategory,
+          }))
+        : row.fallbackServiceId
+          ? [
+              {
+                id: row.fallbackServiceId,
+                name: row.fallbackServiceName ?? "Procedimento",
+                durationMin: row.fallbackServiceDuration ?? 60,
+                priceCents: row.fallbackServicePriceCents ?? 0,
+                color: row.fallbackServiceColor ?? "#be3f6c",
+                category: row.fallbackServiceCategory ?? "CILIOS",
+              },
+            ]
+          : [];
+
+    return {
+      id: row.id,
+      startAt: row.startAt,
+      endAt: row.endAt,
+      status: row.status,
+      priceCents: row.priceCents,
+      notes: row.notes,
+      reminderSentAt: row.reminderSentAt,
+      cancelReason: row.cancelReason,
+      clientId: row.clientId,
+      clientName: row.clientName,
+      clientPhone: row.clientPhone,
+      professionalId: row.professionalId,
+      professionalName: row.professionalName,
+      professionalColor: row.professionalColor,
+      services: servicesList,
+    };
+  });
+}
 
 /**
  * Agendamentos que começam dentro da janela consultada.
@@ -141,13 +252,16 @@ export async function listAppointmentsInRange(params: {
     filters.push(ne(appointments.status, "CANCELED"));
   }
 
-  return joinedQuery()
+  const rows = await baseQuery()
     .where(and(...filters))
     .orderBy(asc(appointments.startAt));
+
+  return attachServices(rows);
 }
 
 export async function findAppointmentById(id: string): Promise<AppointmentJoinedRow | undefined> {
-  const [row] = await joinedQuery().where(eq(appointments.id, id)).limit(1);
+  const rows = await baseQuery().where(eq(appointments.id, id)).limit(1);
+  const [row] = await attachServices(rows);
   return row;
 }
 
@@ -161,10 +275,12 @@ export async function listAppointmentsByClient(
   clientId: string,
   limit = 50,
 ): Promise<AppointmentJoinedRow[]> {
-  return joinedQuery()
+  const rows = await baseQuery()
     .where(eq(appointments.clientId, clientId))
     .orderBy(sql`${appointments.startAt} desc`)
     .limit(limit);
+
+  return attachServices(rows);
 }
 
 /**
@@ -190,20 +306,62 @@ export async function findOverlappingAppointments(params: {
     filters.push(ne(appointments.id, params.excludeId));
   }
 
-  return joinedQuery().where(and(...filters));
+  const rows = await baseQuery().where(and(...filters));
+  return attachServices(rows);
 }
 
-export async function insertAppointment(values: NewAppointmentRow): Promise<AppointmentRow> {
+export interface ServiceItemInsert {
+  serviceId: string;
+  durationMin: number;
+  priceCents: number;
+  sortOrder?: number;
+}
+
+export async function insertAppointment(
+  values: NewAppointmentRow,
+  serviceItems: ServiceItemInsert[] = [],
+): Promise<AppointmentRow> {
   const [row] = await db.insert(appointments).values(values).returning();
   if (!row) throw new Error("Falha ao inserir agendamento.");
+
+  if (serviceItems.length > 0) {
+    await db.insert(appointmentServices).values(
+      serviceItems.map((item, index) => ({
+        appointmentId: row.id,
+        serviceId: item.serviceId,
+        durationMin: item.durationMin,
+        priceCents: item.priceCents,
+        sortOrder: item.sortOrder ?? index,
+      })),
+    );
+  }
+
   return row;
 }
 
 export async function updateAppointmentRow(
   id: string,
   values: Partial<NewAppointmentRow>,
+  serviceItems?: ServiceItemInsert[],
 ): Promise<AppointmentRow | undefined> {
   const [row] = await db.update(appointments).set(values).where(eq(appointments.id, id)).returning();
+  if (!row) return undefined;
+
+  if (serviceItems !== undefined) {
+    await db.delete(appointmentServices).where(eq(appointmentServices.appointmentId, id));
+    if (serviceItems.length > 0) {
+      await db.insert(appointmentServices).values(
+        serviceItems.map((item, index) => ({
+          appointmentId: id,
+          serviceId: item.serviceId,
+          durationMin: item.durationMin,
+          priceCents: item.priceCents,
+          sortOrder: item.sortOrder ?? index,
+        })),
+      );
+    }
+  }
+
   return row;
 }
 
@@ -235,7 +393,7 @@ export async function countAppointmentsByDay(params: {
 
 /** Usado ao desativar um procedimento: existe agendamento futuro com ele? */
 export async function hasFutureAppointmentsForService(serviceId: string): Promise<boolean> {
-  const [row] = await db
+  const [rowAppointment] = await db
     .select({ id: appointments.id })
     .from(appointments)
     .where(
@@ -246,7 +404,23 @@ export async function hasFutureAppointmentsForService(serviceId: string): Promis
       ),
     )
     .limit(1);
-  return Boolean(row);
+
+  if (rowAppointment) return true;
+
+  const [rowService] = await db
+    .select({ id: appointmentServices.id })
+    .from(appointmentServices)
+    .innerJoin(appointments, eq(appointmentServices.appointmentId, appointments.id))
+    .where(
+      and(
+        eq(appointmentServices.serviceId, serviceId),
+        gte(appointments.startAt, new Date()),
+        or(eq(appointments.status, "SCHEDULED"), eq(appointments.status, "CONFIRMED")),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(rowService);
 }
 
 /**

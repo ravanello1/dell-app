@@ -75,6 +75,11 @@ function AppointmentCard({
   // Abaixo de ~40px não cabe uma segunda linha de texto sem virar poluição.
   const isCompact = height < 42;
 
+  const serviceNames =
+    appointment.services && appointment.services.length > 0
+      ? appointment.services.map((s) => s.name).join(" + ")
+      : appointment.service.name;
+
   return (
     <button
       type="button"
@@ -92,14 +97,14 @@ function AppointmentCard({
         "focus-visible:z-10",
         style.card,
       )}
-      title={`${formatTime(start)}–${formatTime(end)} · ${appointment.client.name} · ${appointment.service.name}`}
+      title={`${formatTime(start)}–${formatTime(end)} · ${appointment.client.name} · ${serviceNames}`}
     >
       <span className="block truncate text-xs font-semibold leading-tight">
         {appointment.client.name}
       </span>
       {!isCompact && (
         <span className="mt-0.5 block truncate text-[11px] leading-tight opacity-80">
-          {formatTime(start)} · {appointment.service.name}
+          {formatTime(start)} · {serviceNames}
         </span>
       )}
     </button>

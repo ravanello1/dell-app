@@ -57,6 +57,15 @@ function toProfessionalDto(row: ProfessionalRow): ProfessionalDto {
 }
 
 function toAppointmentDto(row: AppointmentJoinedRow): AppointmentDto {
+  const primaryService = row.services[0] ?? {
+    id: "",
+    name: "Procedimento",
+    durationMin: 0,
+    priceCents: 0,
+    color: "#be3f6c",
+    category: "CILIOS" as const,
+  };
+
   return {
     id: row.id,
     startAt: row.startAt.toISOString(),
@@ -72,13 +81,8 @@ function toAppointmentDto(row: AppointmentJoinedRow): AppointmentDto {
       phone: row.clientPhone,
       phoneFormatted: formatPhone(row.clientPhone),
     },
-    service: {
-      id: row.serviceId,
-      name: row.serviceName,
-      durationMin: row.serviceDuration,
-      color: row.serviceColor,
-      category: row.serviceCategory,
-    },
+    services: row.services,
+    service: primaryService,
     professional: {
       id: row.professionalId,
       name: row.professionalName,
@@ -203,14 +207,27 @@ export async function createAppointment(
   input: z.output<typeof createAppointmentSchema>,
   user: SessionUser,
 ): Promise<AppointmentDto> {
-  const service = await repository.findServiceById(input.serviceId);
-  if (!service) throw new NotFoundError("Procedimento");
+  const serviceIds = input.serviceIds;
+  if (!serviceIds || serviceIds.length === 0) {
+    throw new BadRequestError("Escolha ao menos um procedimento.");
+  }
+
+  const servicesList: ServiceDto[] = [];
+  for (const sId of serviceIds) {
+    const s = await repository.findServiceById(sId);
+    if (!s) throw new NotFoundError("Procedimento");
+    servicesList.push(toServiceDto(s));
+  }
 
   const professional = await repository.findProfessionalById(input.professionalId);
   if (!professional) throw new NotFoundError("Profissional");
 
-  // O fim vem da duração cadastrada, salvo quando quem agenda informa outro.
-  const endAt = input.endAt ?? addMinutes(input.startAt, service.durationMin);
+  // Duração acumulada = soma das durações de cada procedimento
+  const totalDurationMin = servicesList.reduce((sum, s) => sum + s.durationMin, 0);
+  const totalPriceCents = servicesList.reduce((sum, s) => sum + s.priceCents, 0);
+
+  // O fim vem da duração acumulada, salvo quando quem agenda informa outro
+  const endAt = input.endAt ?? addMinutes(input.startAt, totalDurationMin);
   if (endAt <= input.startAt) {
     throw new BadRequestError("O término precisa ser depois do início.");
   }
@@ -221,18 +238,26 @@ export async function createAppointment(
     endAt,
   });
 
-  const row = await repository.insertAppointment({
-    clientId: input.clientId,
-    serviceId: input.serviceId,
-    professionalId: input.professionalId,
-    startAt: input.startAt,
-    endAt,
-    status: input.status,
-    // Preço congelado no ato: mudar a tabela depois não reescreve o passado.
-    priceCents: input.priceCents ?? service.priceCents,
-    notes: input.notes,
-    createdBy: user.id,
-  });
+  const row = await repository.insertAppointment(
+    {
+      clientId: input.clientId,
+      serviceId: servicesList[0]?.id ?? null,
+      professionalId: input.professionalId,
+      startAt: input.startAt,
+      endAt,
+      status: input.status,
+      // Preço congelado no ato: soma de todos os procedimentos ou valor customizado
+      priceCents: input.priceCents ?? totalPriceCents,
+      notes: input.notes,
+      createdBy: user.id,
+    },
+    servicesList.map((s, index) => ({
+      serviceId: s.id,
+      durationMin: s.durationMin,
+      priceCents: s.priceCents,
+      sortOrder: index,
+    })),
+  );
 
   return getAppointment(row.id);
 }
@@ -241,20 +266,36 @@ export async function updateAppointment(
   id: string,
   input: z.output<typeof updateAppointmentSchema>,
 ): Promise<AppointmentDto> {
-  const existing = await repository.findAppointmentRow(id);
+  const existing = await repository.findAppointmentById(id);
   if (!existing) throw new NotFoundError("Agendamento");
 
   const professionalId = input.professionalId ?? existing.professionalId;
   const startAt = input.startAt ?? existing.startAt;
 
-  // Trocar o procedimento sem informar novo fim recalcula a duração.
+  let newServicesList: ServiceDto[] | undefined;
+  const rawServiceIds =
+    input.serviceIds && input.serviceIds.length > 0
+      ? input.serviceIds
+      : input.serviceId
+        ? [input.serviceId]
+        : undefined;
+
+  if (rawServiceIds) {
+    newServicesList = [];
+    for (const sId of rawServiceIds) {
+      const s = await repository.findServiceById(sId);
+      if (!s) throw new NotFoundError("Procedimento");
+      newServicesList.push(toServiceDto(s));
+    }
+  }
+
+  // Trocar o procedimento sem informar novo fim recalcula a duração acumulada
   let endAt = input.endAt ?? existing.endAt;
-  if (input.serviceId && input.serviceId !== existing.serviceId && !input.endAt) {
-    const service = await repository.findServiceById(input.serviceId);
-    if (!service) throw new NotFoundError("Procedimento");
-    endAt = addMinutes(startAt, service.durationMin);
+  if (newServicesList && !input.endAt) {
+    const totalDurationMin = newServicesList.reduce((sum, s) => sum + s.durationMin, 0);
+    endAt = addMinutes(startAt, totalDurationMin);
   } else if (input.startAt && !input.endAt) {
-    // Só mudou o horário: preserva a duração original ao arrastar na grade.
+    // Só mudou o horário: preserva a duração original ao arrastar na grade
     const durationMs = existing.endAt.getTime() - existing.startAt.getTime();
     endAt = new Date(startAt.getTime() + durationMs);
   }
@@ -267,7 +308,7 @@ export async function updateAppointment(
     input.startAt !== undefined ||
     input.endAt !== undefined ||
     input.professionalId !== undefined ||
-    input.serviceId !== undefined;
+    rawServiceIds !== undefined;
 
   const willBlock =
     !input.status || (input.status !== "CANCELED" && input.status !== "NO_SHOW");
@@ -278,17 +319,28 @@ export async function updateAppointment(
 
   const isCanceling = input.status === "CANCELED" && existing.status !== "CANCELED";
 
-  const row = await repository.updateAppointmentRow(id, {
-    ...(input.clientId !== undefined && { clientId: input.clientId }),
-    ...(input.serviceId !== undefined && { serviceId: input.serviceId }),
-    ...(input.professionalId !== undefined && { professionalId: input.professionalId }),
-    ...(input.startAt !== undefined && { startAt }),
-    endAt,
-    ...(input.priceCents !== undefined && { priceCents: input.priceCents }),
-    ...(input.status !== null && input.status !== undefined && { status: input.status }),
-    ...(input.notes !== undefined && { notes: input.notes }),
-    ...(isCanceling && { canceledAt: new Date(), cancelReason: input.cancelReason ?? null }),
-  });
+  const row = await repository.updateAppointmentRow(
+    id,
+    {
+      ...(input.clientId !== undefined && { clientId: input.clientId }),
+      ...(newServicesList && { serviceId: newServicesList[0]?.id ?? null }),
+      ...(input.professionalId !== undefined && { professionalId: input.professionalId }),
+      ...(input.startAt !== undefined && { startAt }),
+      endAt,
+      ...(input.priceCents !== undefined && { priceCents: input.priceCents }),
+      ...(input.status !== null && input.status !== undefined && { status: input.status }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      ...(isCanceling && { canceledAt: new Date(), cancelReason: input.cancelReason ?? null }),
+    },
+    newServicesList
+      ? newServicesList.map((s, index) => ({
+          serviceId: s.id,
+          durationMin: s.durationMin,
+          priceCents: s.priceCents,
+          sortOrder: index,
+        }))
+      : undefined,
+  );
 
   if (!row) throw new NotFoundError("Agendamento");
   return getAppointment(row.id);

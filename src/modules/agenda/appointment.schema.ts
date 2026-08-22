@@ -40,10 +40,8 @@ export const appointments = sqliteTable(
     clientId: text("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
-    /** Restrict: serviço em uso não se apaga, se desativa. */
-    serviceId: text("service_id")
-      .notNull()
-      .references(() => services.id, { onDelete: "restrict" }),
+    /** Restrict: serviço em uso não se apaga, se desativa. Mantido para compatibilidade com o serviço principal. */
+    serviceId: text("service_id").references(() => services.id, { onDelete: "restrict" }),
     professionalId: text("professional_id")
       .notNull()
       .references(() => professionals.id, { onDelete: "restrict" }),
@@ -75,3 +73,31 @@ export const appointments = sqliteTable(
 
 export type AppointmentRow = typeof appointments.$inferSelect;
 export type NewAppointmentRow = typeof appointments.$inferInsert;
+
+/**
+ * Procedimentos associados ao agendamento. Permite múltiplos procedimentos por
+ * cliente no mesmo horário com durações e preços acumulados.
+ */
+export const appointmentServices = sqliteTable(
+  "appointment_services",
+  {
+    id: primaryId(),
+    appointmentId: text("appointment_id")
+      .notNull()
+      .references(() => appointments.id, { onDelete: "cascade" }),
+    serviceId: text("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "restrict" }),
+    durationMin: integer("duration_min").notNull(),
+    priceCents: integer("price_cents").notNull().default(0),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [
+    index("appointment_services_appointment_idx").on(table.appointmentId),
+    index("appointment_services_service_idx").on(table.serviceId),
+  ],
+);
+
+export type AppointmentServiceRow = typeof appointmentServices.$inferSelect;
+export type NewAppointmentServiceRow = typeof appointmentServices.$inferInsert;

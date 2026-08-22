@@ -87,7 +87,11 @@ export function AgendaList({
                           {appointment.client.name}
                         </span>
                         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-600">
-                          <span className="truncate">{appointment.service.name}</span>
+                          <span className="truncate">
+                            {appointment.services && appointment.services.length > 0
+                              ? appointment.services.map((s) => s.name).join(" + ")
+                              : appointment.service.name}
+                          </span>
                           <span className="flex items-center gap-1 text-ink-400">
                             <User className="size-3" aria-hidden />
                             {appointment.professional.name}

@@ -142,6 +142,17 @@ describe("agendamento", () => {
     expect(result.status).toBe("SCHEDULED"); // padrão
   });
 
+  it("aceita múltiplos procedimentos com serviceIds", () => {
+    const result = createAppointmentSchema.parse({
+      clientId: "c1",
+      serviceIds: ["s1", "s2"],
+      professionalId: "p1",
+      startAt: "2026-08-12T17:30:00.000Z",
+    });
+    expect(result.serviceIds).toEqual(["s1", "s2"]);
+    expect(result.serviceId).toBe("s1");
+  });
+
   it("exige cliente, procedimento e profissional", () => {
     const result = createAppointmentSchema.safeParse({
       clientId: "",

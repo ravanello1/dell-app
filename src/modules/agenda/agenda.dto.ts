@@ -91,21 +91,44 @@ export interface ProfessionalDto {
 
 // ── Agendamentos ──────────────────────────────────────────────────────────────
 
-export const createAppointmentSchema = z.object({
-  clientId: z.string().min(1, "Escolha a cliente."),
-  serviceId: z.string().min(1, "Escolha o procedimento."),
-  professionalId: z.string().min(1, "Escolha a profissional."),
-  startAt: instant,
-  /** Ausente = calculado a partir da duração do procedimento. */
-  endAt: instant.optional(),
-  /** Ausente = copiado do preço do procedimento. */
-  priceCents: z.coerce.number().int().min(0).optional(),
-  status: z.enum(appointmentStatuses).default("SCHEDULED"),
-  notes: optionalText(1000),
-});
+export const createAppointmentSchema = z
+  .object({
+    clientId: z.string().min(1, "Escolha a cliente."),
+    serviceIds: z.array(z.string().min(1)).min(1, "Escolha o procedimento.").optional(),
+    serviceId: z.string().min(1, "Escolha o procedimento.").optional(),
+    professionalId: z.string().min(1, "Escolha a profissional."),
+    startAt: instant,
+    /** Ausente = calculado a partir da duração acumulada dos procedimentos. */
+    endAt: instant.optional(),
+    /** Ausente = copiado da soma de preços dos procedimentos. */
+    priceCents: z.coerce.number().int().min(0).optional(),
+    status: z.enum(appointmentStatuses).default("SCHEDULED"),
+    notes: optionalText(1000),
+  })
+  .refine(
+    (data) => (data.serviceIds && data.serviceIds.length > 0) || Boolean(data.serviceId),
+    {
+      message: "Escolha o procedimento.",
+      path: ["serviceIds"],
+    },
+  )
+  .transform((data) => {
+    const serviceIds =
+      data.serviceIds && data.serviceIds.length > 0
+        ? data.serviceIds
+        : data.serviceId
+          ? [data.serviceId]
+          : [];
+    return {
+      ...data,
+      serviceIds,
+      serviceId: serviceIds[0] ?? "",
+    };
+  });
 
 export const updateAppointmentSchema = z.object({
   clientId: z.string().min(1).optional(),
+  serviceIds: z.array(z.string().min(1)).min(1).optional(),
   serviceId: z.string().min(1).optional(),
   professionalId: z.string().min(1).optional(),
   startAt: instant.optional(),
@@ -130,8 +153,17 @@ export const agendaRangeSchema = z.object({
 
 export type AgendaRange = z.infer<typeof agendaRangeSchema>;
 
+export interface AppointmentServiceItemDto {
+  id: string;
+  name: string;
+  durationMin: number;
+  priceCents: number;
+  color: string;
+  category: (typeof serviceCategories)[number];
+}
+
 /**
- * Agendamento como sai da API: já traz cliente, procedimento e profissional
+ * Agendamento como sai da API: já traz cliente, procedimentos e profissional
  * embutidos. O calendário renderiza dezenas de cards de uma vez — buscar cada
  * relação separadamente seria o clássico problema de N+1 na tela.
  */
@@ -150,13 +182,9 @@ export interface AppointmentDto {
     phone: string;
     phoneFormatted: string;
   };
-  service: {
-    id: string;
-    name: string;
-    durationMin: number;
-    color: string;
-    category: (typeof serviceCategories)[number];
-  };
+  services: AppointmentServiceItemDto[];
+  /** Procedimento principal mantido para retrocompatibilidade e destaque visual */
+  service: AppointmentServiceItemDto;
   professional: {
     id: string;
     name: string;

@@ -90,28 +90,35 @@ export function CalendarMonth({
               </button>
 
               <div className="flex flex-col gap-0.5">
-                {dayAppointments.slice(0, MAX_VISIBLE).map((appointment) => (
-                  <button
-                    key={appointment.id}
-                    type="button"
-                    onClick={() => onSelectAppointment(appointment)}
-                    className={cn(
-                      "flex items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] leading-tight sm:text-[11px]",
-                      statusStyles[appointment.status].card,
-                    )}
-                    title={`${formatInStudio(new Date(appointment.startAt), "HH:mm")} ${appointment.client.name} — ${appointment.service.name}`}
-                  >
-                    <span
-                      aria-hidden
-                      className="size-1.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: appointment.service.color }}
-                    />
-                    <span className="hidden shrink-0 tabular-nums sm:inline">
-                      {formatInStudio(new Date(appointment.startAt), "HH:mm")}
-                    </span>
-                    <span className="truncate">{appointment.client.name}</span>
-                  </button>
-                ))}
+                {dayAppointments.slice(0, MAX_VISIBLE).map((appointment) => {
+                  const serviceNames =
+                    appointment.services && appointment.services.length > 0
+                      ? appointment.services.map((s) => s.name).join(" + ")
+                      : appointment.service.name;
+
+                  return (
+                    <button
+                      key={appointment.id}
+                      type="button"
+                      onClick={() => onSelectAppointment(appointment)}
+                      className={cn(
+                        "flex items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] leading-tight sm:text-[11px]",
+                        statusStyles[appointment.status].card,
+                      )}
+                      title={`${formatInStudio(new Date(appointment.startAt), "HH:mm")} ${appointment.client.name} — ${serviceNames}`}
+                    >
+                      <span
+                        aria-hidden
+                        className="size-1.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: appointment.service.color }}
+                      />
+                      <span className="hidden shrink-0 tabular-nums sm:inline">
+                        {formatInStudio(new Date(appointment.startAt), "HH:mm")}
+                      </span>
+                      <span className="truncate">{appointment.client.name}</span>
+                    </button>
+                  );
+                })}
 
                 {dayAppointments.length > MAX_VISIBLE && (
                   <button

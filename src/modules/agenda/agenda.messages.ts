@@ -18,10 +18,15 @@ import type { AppointmentDto } from "./agenda.dto";
  * uma cliente, não um sistema. Mensagem de robô faz a pessoa não responder.
  */
 export function buildReminderMessage(appointment: AppointmentDto, studioName: string): string {
+  const serviceList =
+    appointment.services && appointment.services.length > 0
+      ? appointment.services.map((s) => s.name).join(" + ")
+      : appointment.service.name;
+
   return (
     `Oi, ${firstName(appointment.client.name)}! Tudo bem? 💛\n\n` +
     `Passando para confirmar seu horário no ${studioName}:\n\n` +
-    `✨ ${appointment.service.name}\n` +
+    `✨ ${serviceList}\n` +
     `📅 ${formatDateTime(new Date(appointment.startAt))}\n` +
     `💁 com ${appointment.professional.name}\n\n` +
     `Consegue confirmar para mim?`

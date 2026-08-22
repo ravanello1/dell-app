@@ -84,7 +84,9 @@ export function ClientHistory({ clientId }: { clientId: string }) {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-ink-900">
-                        {appointment.service.name}
+                        {appointment.services && appointment.services.length > 0
+                          ? appointment.services.map((s) => s.name).join(" + ")
+                          : appointment.service.name}
                       </span>
                       <span className="block text-xs text-ink-600">
                         {formatDate(new Date(appointment.startAt))} às{" "}

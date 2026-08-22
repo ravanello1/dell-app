@@ -99,11 +99,22 @@ beforeAll(async () => {
   );
   serviceId = service.id;
 
+  const serviceSobrancelha = await m.agenda.createService(
+    m.agendaDto.createServiceSchema.parse({
+      name: "Design de Sobrancelha",
+      durationMin: 30,
+      priceCents: 5000,
+    }),
+  );
+  serviceSobrancelhaId = serviceSobrancelha.id;
+
   const professional = await m.agenda.createProfessional(
     m.agendaDto.createProfessionalSchema.parse({ name: "Dell" }),
   );
   professionalId = professional.id;
 }, 60_000);
+
+let serviceSobrancelhaId: string;
 
 const at = (time: string) => `2026-09-15T${time}:00.000Z`;
 
@@ -126,6 +137,43 @@ describe("agenda: uma profissional não fica em dois lugares ao mesmo tempo", ()
     // 12:00 + 120min
     expect(appointment.endAt).toBe(at("14:00"));
     expect(appointment.priceCents).toBe(18000); // preço copiado do procedimento
+  });
+
+  it("acumula a duração e o preço de múltiplos procedimentos no mesmo agendamento", async () => {
+    // Cílios (120min) + Sobrancelha (30min) = 150min (2h30m)
+    // 05:00 + 150min = 07:30
+    const appointment = await m.agenda.createAppointment(
+      m.agendaDto.createAppointmentSchema.parse({
+        clientId,
+        serviceIds: [serviceId, serviceSobrancelhaId],
+        professionalId,
+        startAt: at("05:00"),
+      }),
+      owner,
+    );
+
+    expect(appointment.endAt).toBe(at("07:30"));
+    expect(appointment.priceCents).toBe(23000); // 18000 + 5000
+    expect(appointment.services).toHaveLength(2);
+    expect(appointment.services.map((s) => s.name)).toEqual([
+      "Volume Brasileiro",
+      "Design de Sobrancelha",
+    ]);
+
+    // Horário intermediário (06:00) cai dentro do atendimento e deve ser recusado
+    await expect(marcar(at("06:00"))).rejects.toThrow();
+
+    // Horário que encosta no término (07:30) é aceito
+    const nextApp = await m.agenda.createAppointment(
+      m.agendaDto.createAppointmentSchema.parse({
+        clientId,
+        serviceId: serviceSobrancelhaId,
+        professionalId,
+        startAt: at("07:30"),
+      }),
+      owner,
+    );
+    expect(nextApp.startAt).toBe(at("07:30"));
   });
 
   it("recusa horário que cai dentro de outro atendimento", async () => {
