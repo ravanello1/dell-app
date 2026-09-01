@@ -207,6 +207,20 @@ describe("agenda: uma profissional não fica em dois lugares ao mesmo tempo", ()
     // Cancelado não ocupa mais a grade.
     const reused = await marcar(at("18:30"));
     expect(reused.id).not.toBe(original.id);
+
+    // Reativar também precisa respeitar quem ocupou a vaga enquanto ele estava cancelado.
+    await expect(m.agenda.updateAppointment(original.id, { status: "SCHEDULED" })).rejects.toThrow();
+  });
+
+  it("limpa o motivo de cancelamento ao reativar", async () => {
+    const appointment = await marcar(at("00:00"));
+    await m.agenda.updateAppointment(appointment.id, {
+      status: "CANCELED",
+      cancelReason: "Cliente desmarcou",
+    });
+
+    const reactivated = await m.agenda.updateAppointment(appointment.id, { status: "CONFIRMED" });
+    expect(reactivated.cancelReason).toBeNull();
   });
 
   it("ao remarcar, não colide consigo mesmo", async () => {
@@ -242,6 +256,33 @@ describe("estoque: o razão é a verdade", () => {
     expect(movements).toHaveLength(1);
     expect(movements[0]?.type).toBe("IN");
     expect(movements[0]?.balanceAfter).toBe(3);
+  });
+
+  it("só a proprietária pode informar custos pela API", async () => {
+    const reception: SessionUser = { ...owner, id: "user-reception-inventory", role: "RECEPTION" };
+
+    await expect(
+      m.inventory.createProduct(
+        m.inventoryDto.createProductSchema.parse({ name: "Produto restrito", costCents: 100 }),
+        reception,
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      m.inventory.updateProduct(productId, { costCents: 100 }, reception),
+    ).rejects.toThrow();
+
+    await expect(
+      m.inventory.registerMovement(
+        m.inventoryDto.createMovementSchema.parse({
+          productId,
+          type: "IN",
+          quantity: 1,
+          unitCostCents: 100,
+        }),
+        reception,
+      ),
+    ).rejects.toThrow();
   });
 
   it("saída reduz o saldo e dispara o alerta de mínimo", async () => {

@@ -16,7 +16,10 @@ export const createProductSchema = z.object({
   /** Quantidade inicial — vira o primeiro movimento de entrada. */
   initialQty: z.coerce.number().min(0, "A quantidade não pode ser negativa.").default(0),
   minQty: z.coerce.number().min(0, "O mínimo não pode ser negativo.").default(0),
-  costCents: z.coerce.number().int().min(0).default(0),
+  // Mantém a ausência do campo até o service autorizar sua escrita. Um
+  // `default(0)` aqui apagaria a diferença entre custo omitido e enviado pela
+  // API, permitindo que perfis sem essa permissão contornassem a regra.
+  costCents: z.coerce.number().int().min(0).optional(),
   expiresAt: optionalDateOnly,
   notes: optionalText(500),
 });

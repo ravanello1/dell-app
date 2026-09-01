@@ -76,19 +76,57 @@ export async function updateProductRow(
 export async function recordMovement(params: {
   productId: string;
   type: StockMovementType;
-  qtyDelta: number;
-  balanceAfter: number;
+  quantity: number;
   reason?: string | null;
   unitCostCents?: number | null;
   appointmentId?: string | null;
   userId: string;
-}): Promise<void> {
-  await db.transaction(async (tx) => {
+}): Promise<
+  | { kind: "RECORDED"; product: ProductRow }
+  | { kind: "NOT_FOUND" }
+  | { kind: "INSUFFICIENT"; product: ProductRow }
+  | { kind: "NO_CHANGE" }
+  | { kind: "CONTENDED" }
+> {
+  // A atualização compara o saldo que foi lido com o que ainda está no banco.
+  // Se outro movimento passou antes, tentamos de novo a partir do saldo novo;
+  // nunca gravamos uma linha do razão com saldo calculado fora da transação.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await db.transaction(async (tx) => {
+      const [product] = await tx
+        .select()
+        .from(products)
+        .where(eq(products.id, params.productId))
+        .limit(1);
+      if (!product) return { kind: "NOT_FOUND" } as const;
+
+      const quantity = Math.round(params.quantity * 1000) / 1000;
+      const qtyDelta =
+        params.type === "IN"
+          ? quantity
+          : params.type === "OUT" || params.type === "LOSS"
+            ? -quantity
+            : quantity - product.currentQty;
+      const balanceAfter = Math.round((product.currentQty + qtyDelta) * 1000) / 1000;
+
+      if (balanceAfter < 0) return { kind: "INSUFFICIENT", product } as const;
+      if (qtyDelta === 0) return { kind: "NO_CHANGE" } as const;
+
+      // A cláusula com o saldo anterior funciona como controle otimista de
+      // concorrência. Sem ela, duas saídas poderiam sobrescrever o cache uma
+      // da outra e registrar `balanceAfter` incompatível no razão.
+      const [updated] = await tx
+        .update(products)
+        .set({ currentQty: balanceAfter, updatedAt: new Date() })
+        .where(and(eq(products.id, params.productId), eq(products.currentQty, product.currentQty)))
+        .returning();
+      if (!updated) return { kind: "RETRY" } as const;
+
     const movement: NewStockMovementRow = {
       productId: params.productId,
       type: params.type,
-      qtyDelta: params.qtyDelta,
-      balanceAfter: params.balanceAfter,
+      qtyDelta,
+      balanceAfter,
       reason: params.reason ?? null,
       unitCostCents: params.unitCostCents ?? null,
       appointmentId: params.appointmentId ?? null,
@@ -97,11 +135,13 @@ export async function recordMovement(params: {
     };
 
     await tx.insert(stockMovements).values(movement);
-    await tx
-      .update(products)
-      .set({ currentQty: params.balanceAfter, updatedAt: new Date() })
-      .where(eq(products.id, params.productId));
-  });
+    return { kind: "RECORDED", product: updated } as const;
+    });
+
+    if (result.kind !== "RETRY") return result;
+  }
+
+  return { kind: "CONTENDED" };
 }
 
 export async function listMovements(productId: string, limit = 60) {

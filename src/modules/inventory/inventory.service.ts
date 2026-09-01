@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { ConflictError, NotFoundError } from "@/core/api/errors";
+import { ConflictError, ForbiddenError, NotFoundError } from "@/core/api/errors";
 import { canSeeCosts } from "@/core/auth/guard";
 import type { SessionUser } from "@/core/auth/session";
 import { toDateInputValue } from "@/core/utils/date";
@@ -13,7 +13,6 @@ import type {
 } from "./inventory.dto";
 import * as repository from "./inventory.repository";
 import type { ProductRow } from "./product.schema";
-import type { StockMovementType } from "./stock-movement.schema";
 
 /**
  * Regras do estoque.
@@ -94,6 +93,10 @@ export async function createProduct(
   input: z.output<typeof createProductSchema>,
   user: SessionUser,
 ): Promise<ProductDto> {
+  if (input.costCents !== undefined && !canSeeCosts(user)) {
+    throw new ForbiddenError("Somente a proprietária pode informar custos de produtos.");
+  }
+
   const initialQty = round(input.initialQty);
 
   const row = await repository.insertProduct({
@@ -105,7 +108,7 @@ export async function createProduct(
     unit: input.unit,
     currentQty: 0, // o saldo entra pelo movimento logo abaixo
     minQty: round(input.minQty),
-    costCents: input.costCents,
+    costCents: input.costCents ?? 0,
     expiresAt: input.expiresAt,
     notes: input.notes,
   });
@@ -113,16 +116,18 @@ export async function createProduct(
   // A quantidade inicial vira uma entrada no razão, e não um número solto:
   // o extrato do produto nasce coerente com o saldo desde a primeira linha.
   if (initialQty > 0) {
-    await repository.recordMovement({
+    const movement = await repository.recordMovement({
       productId: row.id,
       type: "IN",
-      qtyDelta: initialQty,
-      balanceAfter: initialQty,
+      quantity: initialQty,
       reason: "Cadastro inicial",
-      unitCostCents: input.costCents || null,
+      unitCostCents: input.costCents ?? null,
       userId: user.id,
     });
-    row.currentQty = initialQty;
+    if (movement.kind !== "RECORDED") {
+      throw new Error("Falha ao registrar a quantidade inicial do produto.");
+    }
+    return toProductDto(movement.product, user);
   }
 
   return toProductDto(row, user);
@@ -135,6 +140,9 @@ export async function updateProduct(
 ): Promise<ProductDto> {
   const existing = await repository.findProductById(id);
   if (!existing) throw new NotFoundError("Produto");
+  if (input.costCents !== undefined && !canSeeCosts(user)) {
+    throw new ForbiddenError("Somente a proprietária pode alterar custos de produtos.");
+  }
 
   const row = await repository.updateProductRow(id, {
     ...(input.name !== undefined && { name: input.name }),
@@ -161,59 +169,41 @@ export async function updateProduct(
  * caixas" e "contei a prateleira e tem 7" — as duas coisas acontecem no dia a
  * dia do studio e precisam de registros distintos.
  */
-function computeDelta(
-  type: StockMovementType,
-  quantity: number,
-  currentQty: number,
-): number {
-  switch (type) {
-    case "IN":
-      return round(quantity);
-    case "OUT":
-    case "LOSS":
-      return round(-quantity);
-    case "ADJUST":
-      return round(quantity - currentQty);
-  }
-}
-
 export async function registerMovement(
   input: z.output<typeof createMovementSchema>,
   user: SessionUser,
 ): Promise<ProductDto> {
-  const product = await repository.findProductById(input.productId);
-  if (!product) throw new NotFoundError("Produto");
-
-  const delta = computeDelta(input.type, input.quantity, product.currentQty);
-  const balanceAfter = round(product.currentQty + delta);
-
-  // Saída maior que o saldo é recusada de propósito: quase sempre significa
-  // que o cadastro está desatualizado, e o caminho certo é o ajuste de
-  // inventário — que deixa registrado que houve uma contagem.
-  if (balanceAfter < 0) {
-    throw new ConflictError(
-      `Saldo insuficiente: há ${round(product.currentQty)} ${product.unit.toLowerCase()} de ${product.name}. ` +
-        `Se a prateleira mostra outro número, use "Ajuste de inventário".`,
-      { quantity: ["Quantidade maior que o saldo disponível."] },
-    );
+  if (input.unitCostCents !== undefined && !canSeeCosts(user)) {
+    throw new ForbiddenError("Somente a proprietária pode informar custos de movimentos.");
   }
 
-  if (delta === 0) {
-    throw new ConflictError("Este movimento não altera o saldo.");
-  }
-
-  await repository.recordMovement({
-    productId: product.id,
+  const movement = await repository.recordMovement({
+    productId: input.productId,
     type: input.type,
-    qtyDelta: delta,
-    balanceAfter,
+    quantity: input.quantity,
     reason: input.reason,
     unitCostCents: input.unitCostCents ?? null,
     appointmentId: input.appointmentId ?? null,
     userId: user.id,
   });
 
-  return getProduct(product.id, user);
+  if (movement.kind === "NOT_FOUND") throw new NotFoundError("Produto");
+  if (movement.kind === "INSUFFICIENT") {
+    throw new ConflictError(
+      `Saldo insuficiente: há ${round(movement.product.currentQty)} ${movement.product.unit.toLowerCase()} de ${movement.product.name}. ` +
+        `Se a prateleira mostra outro número, use "Ajuste de inventário".`,
+      { quantity: ["Quantidade maior que o saldo disponível."] },
+    );
+  }
+
+  if (movement.kind === "NO_CHANGE") {
+    throw new ConflictError("Este movimento não altera o saldo.");
+  }
+  if (movement.kind === "CONTENDED") {
+    throw new ConflictError("O estoque foi alterado ao mesmo tempo. Atualize a tela e tente novamente.");
+  }
+
+  return toProductDto(movement.product, user);
 }
 
 export async function listMovements(productId: string): Promise<StockMovementDto[]> {

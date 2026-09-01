@@ -10,22 +10,21 @@
  *
  * Estratégias:
  *   estáticos do Next  → cache primeiro (o nome do arquivo já tem hash)
- *   navegação (HTML)   → rede primeiro, cai para a última página vista
- *   GET em /api/v1     → rede primeiro, cai para a última resposta boa
+ *   navegação protegida → sempre rede, cai apenas na página offline pública
+ *   GET em /api/v1     → sempre rede, nunca cache
  *   escrita em /api    → sempre rede, nunca cache
  */
 
-const VERSION = "v2";
+const VERSION = "v3";
 const STATIC_CACHE = `dell-static-${VERSION}`;
 const PAGES_CACHE = `dell-pages-${VERSION}`;
-const API_CACHE = `dell-api-${VERSION}`;
 const OFFLINE_URL = "/offline";
 
 /** Arte da marca — precisa estar disponível offline (a página offline mostra o
  *  logo) e quase nunca muda, então entra no precache junto da página offline. */
 const BRAND_LOGO = "/brand/dell-logo.png";
 
-const CURRENT_CACHES = [STATIC_CACHE, PAGES_CACHE, API_CACHE];
+const CURRENT_CACHES = [STATIC_CACHE, PAGES_CACHE];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -53,34 +52,29 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/** Rede primeiro; se falhar, devolve o que houver em cache. */
+/** Rede primeiro; se falhar, devolve apenas uma página pública de fallback. */
 async function networkFirst(request, cacheName, fallbackUrl) {
   const cache = await caches.open(cacheName);
   try {
-    const response = await fetch(request);
-    if (response && response.ok) {
-      cache.put(request, response.clone());
-    }
-    return response;
+    return await fetch(request);
   } catch (error) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-
     if (fallbackUrl) {
       const fallback = await cache.match(fallbackUrl);
       if (fallback) return fallback;
     }
-
-    // Para a API, um JSON de erro é mais útil do que uma exceção solta.
-    if (request.url.includes("/api/")) {
-      return new Response(
-        JSON.stringify({
-          error: { code: "OFFLINE", message: "Sem conexão. Mostrando dados salvos no aparelho." },
-        }),
-        { status: 503, headers: { "Content-Type": "application/json" } },
-      );
-    }
     throw error;
+  }
+}
+
+/** A API pode conter dados autenticados: nunca persistir ou reutilizar respostas. */
+async function networkOnlyApi(request) {
+  try {
+    return await fetch(request);
+  } catch (_error) {
+    return new Response(
+      JSON.stringify({ error: { code: "OFFLINE", message: "Sem conexão." } }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
   }
 }
 
@@ -123,11 +117,13 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(networkFirst(request, API_CACHE));
+    event.respondWith(networkOnlyApi(request));
     return;
   }
 
   if (request.mode === "navigate") {
+    // Páginas do app são autenticadas; não mantemos seu HTML no dispositivo.
+    // Se a rede falhar, só a página offline pública pode ser servida do cache.
     event.respondWith(networkFirst(request, PAGES_CACHE, OFFLINE_URL));
   }
 });

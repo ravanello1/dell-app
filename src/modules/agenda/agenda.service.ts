@@ -310,10 +310,14 @@ export async function updateAppointment(
     input.professionalId !== undefined ||
     rawServiceIds !== undefined;
 
-  const willBlock =
-    !input.status || (input.status !== "CANCELED" && input.status !== "NO_SHOW");
+  const nextStatus = input.status ?? existing.status;
+  const willBlock = nextStatus !== "CANCELED" && nextStatus !== "NO_SHOW";
+  const wasBlocking = existing.status !== "CANCELED" && existing.status !== "NO_SHOW";
+  const isReactivating = !wasBlocking && willBlock;
 
-  if (movedOrRescheduled && willBlock) {
+  // Um horário cancelado deixa de ocupar a grade. Ao reativá-lo, mesmo sem
+  // mover o intervalo, é preciso garantir que ninguém tenha usado a vaga.
+  if (willBlock && (movedOrRescheduled || isReactivating)) {
     await assertNoConflict({ professionalId, startAt, endAt, excludeId: id });
   }
 
@@ -331,6 +335,7 @@ export async function updateAppointment(
       ...(input.status !== null && input.status !== undefined && { status: input.status }),
       ...(input.notes !== undefined && { notes: input.notes }),
       ...(isCanceling && { canceledAt: new Date(), cancelReason: input.cancelReason ?? null }),
+      ...(isReactivating && { canceledAt: null, cancelReason: null }),
     },
     newServicesList
       ? newServicesList.map((s, index) => ({
